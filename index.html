@@ -49,6 +49,7 @@
   .lamps { display:flex; gap:8px; justify-content:center; margin:6px 0; flex-wrap:wrap; }
   .lamp { padding:3px 8px; border-radius:12px; font-size:11px; background:#2a2020; color:var(--dim); border:1px solid var(--edge); }
   .lamp.on { background:#1d4a2c; color:#aef0c4; border-color:var(--green); } .lamp.bad { background:#5a2020; color:#ffc9c9; border-color:var(--red); }
+  #bRed { background:#6b2323; border-color:var(--red); } #bGreen { background:#245c34; border-color:var(--green); }
   #bLower { background:#6b2323; border-color:var(--red); } #bRaise { background:#245c34; border-color:var(--green); }
   #overlay { position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; padding:16px; z-index:5; overflow:auto; }
   #overlay .card { max-width:660px; background:var(--panel); border:1px solid var(--edge); border-radius:10px; padding:20px 24px; }
@@ -80,12 +81,13 @@
   <div class="picks">
     <button class="pick" data-box="bailey"><b>Bailey Crossing</b><span>Quiet single line. Wheel-operated gates and two protecting signals. A gentle start.</span></button>
     <button class="pick" data-box="otla"><b>Otla</b><span>Quiet single line with hand-swung gates and no road lights. The signalman has to walk out to swing them.</span></button>
+    <button class="pick" data-box="leeforest"><b>Lee Forest</b><span>Single line through woodland. A miniature-warning-lights crossing: no gates or barriers, just red and green road lights.</span></button>
     <button class="pick" data-box="strawlake"><b>Straw Lake</b><span>Quiet two-track line. Wheel-operated full barriers on a skewed road, both hanging from the east side.</span></button>
     <button class="pick" data-box="tuborne"><b>Tuborne Station</b><span>Busy four-track main line with a station. Full barriers, four signals, and a footbridge with stairs to the platforms.</span></button>
   </div>
   <ol>
     <li>The <b>bell</b> rings when a train is offered. <b>Accept</b> it at its block instrument.</li>
-    <li>Close the road: turn the gate wheel (Bailey) or barrier wheel (Straw Lake), lower the barriers (Tuborne) or swing the gates by hand (Otla). A stalled vehicle will block this.</li>
+    <li>Close the road: turn the gate wheel (Bailey) or barrier wheel (Straw Lake), lower the barriers (Tuborne) or set the road lights red and wait out the clear time (Lee Forest) or swing the gates by hand (Otla). A stalled vehicle will block this.</li>
     <li>Road shut? Pull that train's <b>signal lever</b>. After the train passes, restore the lever and reopen the road.</li>
   </ol>
   <p style="color:var(--dim)">Shortcuts: keys 1&ndash;4 pull levers; Bailey wheel &larr;/&rarr;; Tuborne barriers &darr; lower, &uarr; raise. The 3D version is kept in <code>index3d.html</code>.</p>
@@ -137,6 +139,15 @@ const SCENARIOS = {
     signals: [
       { id: 'U', name: 'Up line', desc: 'westbound', dir: -1, group: 'U', ty: 235, x: 620, y: 256 },
       { id: 'D', name: 'Down line', desc: 'eastbound', dir: 1, group: 'D', ty: 285, x: 380, y: 264 }
+    ]
+  },
+  leeforest: {
+    title: 'Lee Forest', trainLen: 140, offerGap: [45, 80], carGap: [7, 15],
+    // miniature warning lights only: no gates, no barriers. Everyone obeys the red.
+    crossing: { type: 'lights', zone: [215, 305], stopN: 322, stopS: 198, runners: 0 },
+    signals: [
+      { id: 'W', name: 'West signal', desc: 'eastbound', dir: 1, group: 'T', ty: 260, x: 380, y: 236 },
+      { id: 'E', name: 'East signal', desc: 'westbound', dir: -1, group: 'T', ty: 260, x: 620, y: 284 }
     ]
   }
 };
@@ -190,7 +201,7 @@ function toggleLever(id) {
   if (S.sigOff[id]) { S.sigOff[id] = false; lk.textContent = ''; say('Signal returned to danger.'); return; }
   let why = '';
   if (SC.signals.some(o => o !== sig && o.group === sig.group && S.sigOff[o.id])) why = 'Opposing signal is off';
-  else if (!gateClosed()) why = SC.crossing.type === 'barrier' || SC.crossing.barriers ? 'Locked: barriers not down' : 'Locked: gates not closed';
+  else if (!gateClosed()) why = SC.crossing.type === 'lights' ? 'Locked: road lights not red long enough' : SC.crossing.type === 'barrier' || SC.crossing.barriers ? 'Locked: barriers not down' : 'Locked: gates not closed';
   else if (carsInZone().length) why = 'Locked: vehicle on the crossing';
   else if (S.inst[id] !== 'accepted') why = 'No train accepted on that line';
   if (why) { lk.textContent = why; say(why + '.'); el.classList.add('shake'); setTimeout(() => el.classList.remove('shake'), 320); return; }
@@ -203,8 +214,16 @@ function accept(id) {
   S.trains.push({ sig, dir: sig.dir, x: sig.dir > 0 ? -1000 : W + 1000, v: sig.vmax || 110, served: !sig.station, dwell: 0, committed: false, passedAtDanger: false });
   say(`Accepted ${sig.name} train. Close the road when it is clear.`);
 }
+function cmdLights(cmd) {
+  if (cmd === 'lower') { if (S.lights || S.cmd === 'red') return; S.cmd = 'red'; S.lightT = 0; say('Road lights changing to red.', 3); }
+  else if (anySigOff()) say('Locked: a signal is off.');
+  else if (approachLocked()) say('Locked: train on the crossing.');
+  else if (S.lights || S.cmd) { S.cmd = null; S.lights = false; S.lightT = 0; S.gate = 0; say('Road lights green.', 3); }
+}
 function cmdBarrier(cmd) {
-  if (!S.running || SC.crossing.type !== 'barrier') return;
+  if (!S.running) return;
+  if (SC.crossing.type === 'lights') return cmdLights(cmd);
+  if (SC.crossing.type !== 'barrier') return;
   if (cmd === 'lower') {
     if (S.gate >= 0.999 || S.cmd === 'lower') return;
     S.cmd = 'lower'; if (!S.lights) { S.lights = true; S.lightT = 0; } else S.lightT = Math.max(S.lightT, 3);
@@ -250,6 +269,12 @@ function updateHand(dt) {
 }
 function updateCrossing(dt) {
   if (SC.crossing.type === 'hand') return updateHand(dt);
+  if (SC.crossing.type === 'lights') {
+    if (S.cmd === 'red') { S.lightT += dt; if (S.lightT >= 2) S.lights = true; }
+    S.gate = S.lights ? Math.min(1, (S.lightT - 2) / 12) : 0;      // fraction of the road-user clear time that has run
+    $('lkG').textContent = !S.cmd ? 'Road lights green' : !S.lights ? 'Lights changing to red\u2026' : S.gate < 1 ? `Clear time: ${Math.ceil(12 * (1 - S.gate))}s` : 'Clear time done \u2014 safe to signal';
+    return;
+  }
   if (SC.crossing.type === 'wheel') {
     const d = (held.close ? 1 : 0) - (held.open ? 1 : 0), lk = $('lkG');
     if (!d) { lk.textContent = 'Hold the buttons, or use ← / → keys'; return; }
@@ -301,10 +326,19 @@ function updateTrains(dt) {
   S.trains = S.trains.filter(t => !(trainRear(t) * t.dir > (t.dir > 0 ? W + 40 : -40) * t.dir));
 }
 
+function checkCollisions() {
+  for (const tr of S.trains) {
+    const x0 = Math.min(tr.x, trainRear(tr)) - 8, x1 = Math.max(tr.x, trainRear(tr)) + 8;
+    for (const c of S.cars) if (!c.hit && Math.abs(c.y - tr.sig.ty) < 16 && c.x > x0 && c.x < x1) {
+      c.hit = true; S.penalties += 200; ding(110, 0, .8, .4); say('COLLISION! A train has hit a vehicle on the crossing! -200', 10);
+    }
+  }
+  if (S.cars.some(c => c.hit)) S.cars = S.cars.filter(c => !c.hit);
+}
 function spawnCar(dy) {
   const lane = dy > 0 ? ROAD_X + 15 : ROAD_X - 15;                    // drive on the left
   const cols = [0xc0c8d0, 0xd4553f, 0x3b6fd4, 0xe9c24a, 0x2f2f35, 0x58a36a];
-  S.cars.push({ x: lane, lane, y: dy > 0 ? -20 : H + 20, dy, v: 0, wait: 0, flagged: false, col: cols[Math.floor(Math.random() * cols.length)], stall: 0, stallArmed: false });
+  S.cars.push({ runner: Math.random() < (SC.crossing.runners || 0), wasBefore: true, x: lane, lane, y: dy > 0 ? -20 : H + 20, dy, v: 0, wait: 0, flagged: false, col: cols[Math.floor(Math.random() * cols.length)], stall: 0, stallArmed: false });
 }
 function updateCars(dt) {
   const X = SC.crossing, [zt, zb] = X.zone;
@@ -317,7 +351,7 @@ function updateCars(dt) {
     const front = c.y + c.dy * 15, stopY = c.dy < 0 ? X.stopN : X.stopS, before = (front - stopY) * c.dy < 0;
     let target = 60;
     if (c.stall > 0) { c.stall -= dt; target = 0; }
-    else if (before && !open) { const room = (stopY - front) * c.dy; target = room <= 1 ? 0 : Math.min(60, Math.sqrt(2 * 80 * room)); }
+    else if (before && !open && !c.runner) { const room = (stopY - front) * c.dy; target = room <= 1 ? 0 : Math.min(60, Math.sqrt(2 * 80 * room)); }
     for (const o of S.cars) {
       if (o === c || o.dy !== c.dy) continue;
       const gap = (o.y - c.y) * c.dy;
@@ -326,6 +360,8 @@ function updateCars(dt) {
     if (!c.stallArmed && S.trainsDone >= 2 && !before && c.y > zt + 15 && c.y < zb - 15 && S.breakdownArmed <= 0 && Math.random() < 0.004) {
       c.stall = 22; c.stallArmed = true; S.breakdownArmed = 120; say('A car has broken down on the crossing!', 6);
     }
+    if (c.runner && c.wasBefore && !before && !open) say('A vehicle has run the red light!', 5);
+    c.wasBefore = before;
     c.v += Math.max(-200 * dt, Math.min(60 * dt, target - c.v));
     c.y += c.dy * c.v * dt;
     if (X.skew) c.x = c.lane + (c.y - TRACK_Y) * X.skew;
@@ -356,7 +392,7 @@ const fmt = n => { n = Math.floor(n); return String(Math.floor(n / 60)).padStart
 function update(dt) {
   if (!S.running) return;
   S.t += dt;
-  updateCrossing(dt); updateTrains(dt); updateCars(dt); updateOffers(dt);
+  updateCrossing(dt); updateTrains(dt); updateCars(dt); checkCollisions(); updateOffers(dt);
   S.score = Math.round(S.trainsDone * 100 - S.trainDelay - S.complaints * 25 - S.penalties);
   if (S.msgTimer > 0 && (S.msgTimer -= dt) <= 0) $('msg').textContent = S.trains.length ? `${S.trains.length} train(s) on the way.` : 'Line clear. Waiting for the next bell.';
 }
@@ -373,6 +409,11 @@ function buildPanel() {
     <svg id="wheel" viewBox="-60 -60 120 120"><g id="wg" stroke="#c9a15a" stroke-width="5" fill="none" stroke-linecap="round"><circle r="48"/><circle r="8" fill="#c9a15a"/><line x1="-48" y1="0" x2="48" y2="0"/><line x1="0" y1="-48" x2="0" y2="48"/><line x1="-34" y1="-34" x2="34" y2="34"/><line x1="34" y1="-34" x2="-34" y2="34"/></g></svg>
     <div class="row"><button id="bOpen">&#9664; Open</button><button id="bClose">Close &#9654;</button></div>
     <div class="gbar"><i id="gfill"></i></div><div class="lock" id="lkG"></div></div>`;
+  else if (X.type === 'lights') h += `<div class="box ctl"><h3>Road warning lights</h3>
+    <div class="lamps"><span class="lamp on" id="lampRoad">Road lights green</span></div>
+    <div class="row"><button id="bRed">Set lights red</button><button id="bGreen">Set lights green</button></div>
+    <div class="gbar"><i id="gfill"></i></div><div class="lock" id="lkG"></div>
+    <div class="lock">No gates or barriers: the lights are all that stops the road. Wait out the clear time before signalling a train.</div></div>`;
   else if (X.type === 'hand') h += `<div class="box ctl"><h3>Hand-swung gates</h3>
     <div class="lamps"><span class="lamp" id="lampN">North gates</span><span class="lamp" id="lampS">South gates</span></div>
     <div class="row"><button id="bCloseAll">Send signalman: shut</button><button id="bOpenAll">Send signalman: open</button></div>
@@ -385,6 +426,7 @@ function buildPanel() {
   $('panel').innerHTML = h;
   for (const s of SC.signals) { $('ac_' + s.id).onclick = () => accept(s.id); $('lv_' + s.id).onclick = () => toggleLever(s.id); }
   if (wheelType) bindHold('bOpen', 'open'), bindHold('bClose', 'close');
+  else if (X.type === 'lights') { $('bRed').onclick = () => cmdLights('lower'); $('bGreen').onclick = () => cmdLights('raise'); }
   else if (X.type === 'hand') { $('bCloseAll').onclick = () => handAuto(1); $('bOpenAll').onclick = () => handAuto(0); }
   else { $('bLower').onclick = () => cmdBarrier('lower'); $('bRaise').onclick = () => cmdBarrier('raise'); }
 }
@@ -401,6 +443,9 @@ function updatePanel() {
   }
   $('gfill').style.width = (S.gate * 100) + '%';
   if (SC.crossing.type === 'wheel') $('wg').setAttribute('transform', `rotate(${S.gate * 1080})`);
+  else if (SC.crossing.type === 'lights') {
+    $('lampRoad').className = 'lamp ' + (S.lights ? 'bad' : 'on'); $('lampRoad').textContent = S.lights ? 'Road lights RED' : S.cmd ? 'Changing\u2026' : 'Road lights green';
+  }
   else if (SC.crossing.type === 'hand') {
     $('lampN').className = 'lamp' + (S.gates.n >= .999 ? ' on' : ''); $('lampS').className = 'lamp' + (S.gates.s >= .999 ? ' on' : '');
     $('gfill').style.width = ((S.gates.n + S.gates.s) / 2 * 100) + '%';
@@ -484,6 +529,20 @@ const SCENERY = {
     },
     over() {}
   },
+  leeforest: {
+    under() {
+      let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+      for (let i = 0; i < 260; i++) {
+        const x = rnd() * W, y = rnd() * H, r = 9 + rnd() * 9;
+        if (Math.abs(x - ROAD_X) < 52 || Math.abs(y - TRACK_Y) < 34 || (x > 560 && x < 700 && y > 110 && y < 225)) continue;
+        if ((Math.abs(x - 380) < 26 && Math.abs(y - 250) < 40) || (Math.abs(x - 620) < 26 && Math.abs(y - 270) < 40)) continue;
+        ctx.fillStyle = '#1f3d1e'; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+        ctx.fillStyle = '#2f5d2c'; ctx.beginPath(); ctx.arc(x - r * .25, y - r * .25, r * .65, 0, 7); ctx.fill();
+      }
+      signalBox(600, 140, 72, 46, 'LEE FOREST');
+    },
+    over() {}
+  },
   tuborne: {
     under() {
       for (const [y, edge] of [[120, 166], [350, 350]]) {
@@ -522,6 +581,18 @@ function armBar(px, py, ang, len) {
   ctx.restore(); ctx.fillStyle = '#555'; ctx.beginPath(); ctx.arc(px, py, 4, 0, 7); ctx.fill();
 }
 const CROSSING = {
+  lights() {
+    // miniature warning lights facing each approach: red over green
+    for (const [x, y] of [[ROAD_X + 38, 205], [ROAD_X - 38, 205], [ROAD_X - 38, 315], [ROAD_X + 38, 315]]) {
+      ctx.fillStyle = '#4a4f56'; ctx.fillRect(x - 1.5, y - 2, 3, 22);
+      ctx.fillStyle = '#111'; ctx.fillRect(x - 6, y - 16, 12, 22);
+      ctx.strokeStyle = '#e5242b'; ctx.lineWidth = 2; ctx.strokeRect(x - 6, y - 16, 12, 22);      // red border round the light board
+      const red = S.lights;
+      ctx.fillStyle = red ? '#ff3030' : '#3a1010'; ctx.beginPath(); ctx.arc(x, y - 9, 3.5, 0, 7); ctx.fill();
+      ctx.fillStyle = red ? '#103a1c' : '#30ff70'; ctx.beginPath(); ctx.arc(x, y + 1, 3.5, 0, 7); ctx.fill();
+      if (red) { ctx.shadowColor = '#f00'; ctx.shadowBlur = 10; ctx.fillStyle = '#ff3030'; ctx.beginPath(); ctx.arc(x, y - 9, 2.5, 0, 7); ctx.fill(); ctx.shadowBlur = 0; }
+    }
+  },
   skewbarrier() {
     // two full barriers on the east verge, lying parallel to the rails when down; lamps flash while they move
     const k = SC.crossing.skew, half = 30 * Math.sqrt(1 + k * k), g = S.gate;
