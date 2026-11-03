@@ -81,6 +81,7 @@
   <div class="picks">
     <button class="pick" data-box="bailey"><b>Bailey Crossing</b><span>Quiet single line. Wheel-operated gates and two protecting signals. A gentle start.</span></button>
     <button class="pick" data-box="otla"><b>Otla</b><span>Quiet single line with hand-swung gates and no road lights. The signalman has to walk out to swing them.</span></button>
+    <button class="pick" data-box="valleybridge"><b>Valley Bridge</b><span>Two-track line over a road by a river valley. One wheel rolls out four trolley gates at once.</span></button>
     <button class="pick" data-box="quayfootpath"><b>Fourth Lane Quay Footpath</b><span>A footpath to the quay crosses the line. A red light on each side stops the walkers.</span></button>
     <button class="pick" data-box="brickworks"><b>Fourth Lane Brickworks</b><span>An open crossing with no gates: a pair of flashing lights each side stops the works traffic.</span></button>
     <button class="pick" data-box="leeforest"><b>Lee Forest</b><span>Single line through woodland. A miniature-warning-lights crossing: no gates or barriers, just red and green road lights.</span></button>
@@ -89,7 +90,7 @@
   </div>
   <ol>
     <li>The <b>bell</b> rings when a train is offered. <b>Accept</b> it at its block instrument.</li>
-    <li>Close the road: turn the gate wheel (Bailey) or barrier wheel (Straw Lake), lower the barriers (Tuborne) or switch on the crossing lights (Lee Forest, Fourth Lane Quay Footpath and Brickworks) or swing the gates by hand (Otla). A stalled vehicle will block this.</li>
+    <li>Close the road: turn the gate wheel (Bailey) or barrier wheel (Straw Lake), trolley gate wheel (Valley Bridge), lower the barriers (Tuborne) or switch on the crossing lights (Lee Forest, Fourth Lane Quay Footpath and Brickworks) or swing the gates by hand (Otla). A stalled vehicle will block this.</li>
     <li>Road shut? Pull that train's <b>signal lever</b>. After the train passes, restore the lever and reopen the road.</li>
   </ol>
   <p style="color:var(--dim)">Shortcuts: keys 1&ndash;4 pull levers; &rarr; shuts the road and &larr; opens it at every crossing (wheel, barriers, gates and lights). The 3D version is kept in <code>index3d.html</code>.</p>
@@ -177,6 +178,15 @@ const SCENARIOS = {
     signals: [
       { id: 'W', name: 'West signal', desc: 'eastbound', dir: 1, group: 'T', ty: 260, x: 380, y: 236 },
       { id: 'E', name: 'East signal', desc: 'westbound', dir: -1, group: 'T', ty: 260, x: 620, y: 284 }
+    ]
+  },
+  valleybridge: {
+    title: 'Valley Bridge', trainLen: 140, offerGap: [40, 75], carGap: [7, 15],
+    // one wheel runs all four trolley gates together; they roll out from housings at the road edges
+    crossing: { type: 'wheel', style: 'trolley', wheelName: 'Trolley gate wheel', zone: [205, 315], stopN: 345, stopS: 175 },
+    signals: [
+      { id: 'U', name: 'Up line', desc: 'westbound', dir: -1, group: 'U', ty: 235, x: 620, y: 256 },
+      { id: 'D', name: 'Down line', desc: 'eastbound', dir: 1, group: 'D', ty: 285, x: 380, y: 264 }
     ]
   }
 };
@@ -615,6 +625,19 @@ const SCENERY = {
     },
     over() {}
   },
+  valleybridge: {
+    under() {
+      ctx.fillStyle = 'rgba(20,60,30,.30)'; ctx.fillRect(0, 10, W, 110);                          // valley floor
+      ctx.strokeStyle = '#2a6aa0'; ctx.lineWidth = 30; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0, 70); ctx.bezierCurveTo(250, 30, 750, 100, W, 50); ctx.stroke(); ctx.lineCap = 'butt';
+      ctx.strokeStyle = '#4f93c9'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, 70); ctx.bezierCurveTo(250, 30, 750, 100, W, 50); ctx.stroke();
+      ctx.fillStyle = '#4a4d52'; ctx.fillRect(ROAD_X - 30, 44, 60, 40);                           // the bridge
+      ctx.fillStyle = '#9a968c'; ctx.fillRect(ROAD_X - 35, 44, 5, 40); ctx.fillRect(ROAD_X + 30, 44, 5, 40);
+      ctx.fillStyle = '#d8d8c8'; ctx.fillRect(ROAD_X - 1, 48, 2, 8); ctx.fillRect(ROAD_X - 1, 70, 2, 8);
+      signalBox(610, 140, 74, 46, 'VALLEY BRIDGE');
+    },
+    over() {}
+  },
   tuborne: {
     under() {
       for (const [y, edge] of [[120, 166], [350, 350]]) {
@@ -673,6 +696,18 @@ function drawFlashing() {
   }
 }
 const CROSSING = {
+  trolley() {
+    // four trolley gates: two on each side of the line, rolling in from housings at the road edge when the wheel is turned
+    const g = S.gate, moving = g > .02 && g < .999, blink = Math.floor(S.t * 3) % 2, L = 28;
+    for (const by of [200, 320]) for (const s of [-1, 1]) {
+      const hx = ROAD_X + s * 30, len = 4 + (L - 4) * g, x0 = s < 0 ? hx : hx - len;
+      ctx.fillStyle = '#555'; ctx.fillRect(s < 0 ? hx - 12 : hx, by - 6, 12, 12);
+      ctx.fillStyle = '#eee'; ctx.fillRect(x0, by - 3, len, 6);
+      ctx.fillStyle = '#d32'; for (let i = 0; i < len; i += 8) ctx.fillRect(s < 0 ? x0 + i : x0 + len - i - Math.min(4, len - i), by - 3, Math.min(4, len - i), 6);
+      ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(s < 0 ? x0 + len : x0, by + 5, 2.5, 0, 7); ctx.fill();        // trolley wheel
+      ctx.fillStyle = g >= .999 ? '#ff3030' : moving && blink ? '#ffb020' : '#553'; ctx.beginPath(); ctx.arc(hx + s * 6, by - 10, 3.5, 0, 7); ctx.fill();
+    }
+  },
   lights() {
     if (SC.crossing.style === 'footpath') return drawFootLights();
     if (SC.crossing.style === 'aocl') return drawFlashing();
