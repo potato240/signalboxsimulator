@@ -473,11 +473,14 @@ function boot() {
 }
 
 // walkable surfaces: flat or ramped rectangles; you can step between ones within 0.7 of your height
+const rampH = (s, x, z) => s.axis === 'x' ? s.y0 + (s.y1 - s.y0) * (x - s.x0) / (s.x1 - s.x0) : s.y0 + (s.y1 - s.y0) * (z - s.z0) / (s.z1 - s.z0);
+const inRect = (s, x, z) => x >= s.x0 && x <= s.x1 && z >= s.z0 && z <= s.z1;
 function surfaceY(x, z, curY) {
   let best = null, bd = 1e9;
   for (const s of B3.surfaces) {
-    if (x < s.x0 || x > s.x1 || z < s.z0 || z > s.z1) continue;
-    const h = s.axis === 'x' ? s.y0 + (s.y1 - s.y0) * (x - s.x0) / (s.x1 - s.x0) : s.axis === 'z' ? s.y0 + (s.y1 - s.y0) * (z - s.z0) / (s.z1 - s.z0) : s.y;
+    if (!inRect(s, x, z)) continue;
+    const h = s.axis ? rampH(s, x, z) : s.y;
+    if (s.axis && Math.abs(h - curY) <= .35) return h;          // a stair under your feet beats the flat floor below it
     const d = Math.abs(h - curY); if (d < bd) { bd = d; best = h; }
   }
   return bd <= .7 ? best : null;
@@ -485,6 +488,7 @@ function surfaceY(x, z, curY) {
 function walkStep(dx, dz) {
   const at = (nx, nz) => {
     const y = surfaceY(nx, nz, walk.sy); if (y === null) return false;
+    for (const s of B3.surfaces) if (s.axis && inRect(s, nx, nz) && y < rampH(s, nx, nz) - .45) return false;   // can't walk through the underside of stairs
     for (const b of B3.blockers) if (Math.abs(y - b.y) < 1.5 && (b.r ? Math.hypot(nx - b.x, nz - b.z) < b.r : nx > b.x0 && nx < b.x1 && nz > b.z0 && nz < b.z1)) return false;
     walk.x = nx; walk.z = nz; walk.sy = y; return true;
   };
