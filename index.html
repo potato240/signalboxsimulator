@@ -252,7 +252,7 @@ function accept(id) {
   if (!S.running || S.inst[id] !== 'offered') return;
   const sig = sigById(id);
   S.inst[id] = 'accepted';
-  S.trains.push({ sig, dir: sig.dir, x: sig.dir > 0 ? -1000 : W + 1000, v: sig.vmax || 110, served: !sig.station, dwell: 0, committed: false, passedAtDanger: false });
+  S.trains.push({ sig, dir: sig.dir, x: sig.dir > 0 ? -1000 : W + 1000, v: sig.vmax || 110, served: !sig.station, dwell: 0, committed: false });
   say(`Accepted ${sig.name} train. Close the road when it is clear.`);
 }
 const ui = () => Object.assign({ title: 'Road warning lights', red: 'Set lights red', green: 'Set lights green', lampOff: 'Road lights green', lampOn: 'Road lights RED', lampWait: 'Changing\u2026',
@@ -358,7 +358,6 @@ function updateTrains(dt) {
       if (tr.v < .5 && dT < 14) { atStation = true; tr.dwell += dt; if (tr.dwell >= st.dwell) tr.served = true; }
     }
     if (tr.v < vmax) tr.v = Math.min(vmax, tr.v + ACCEL * dt); else tr.v = Math.max(vmax, tr.v - BRAKE * dt);
-    if (!off && tr.committed && d < 0 && !tr.passedAtDanger) { tr.passedAtDanger = true; S.penalties += 50; say('Signal restored too late — the driver had to run past it! -50', 8); }
     tr.x += tr.dir * tr.v * dt;
     if (!off && !tr.committed && sigDist(tr) < 0) { tr.x = sig.x; tr.v = 0; }       // never creep past a red
     if (tr.v < 1 && d >= 0 && d < 400 && !off && !atStation) S.trainDelay += dt;
