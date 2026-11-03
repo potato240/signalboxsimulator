@@ -80,11 +80,12 @@
   <div class="picks">
     <button class="pick" data-box="bailey"><b>Bailey Crossing</b><span>Quiet single line. Wheel-operated gates and two protecting signals. A gentle start.</span></button>
     <button class="pick" data-box="otla"><b>Otla</b><span>Quiet single line with hand-swung gates and no road lights. The signalman has to walk out to swing them.</span></button>
+    <button class="pick" data-box="strawlake"><b>Straw Lake</b><span>Quiet two-track line. Wheel-operated full barriers on a skewed road, both hanging from the east side.</span></button>
     <button class="pick" data-box="tuborne"><b>Tuborne Station</b><span>Busy four-track main line with a station. Full barriers, four signals, and a footbridge with stairs to the platforms.</span></button>
   </div>
   <ol>
     <li>The <b>bell</b> rings when a train is offered. <b>Accept</b> it at its block instrument.</li>
-    <li>Close the road: turn the gate wheel (Bailey), lower the barriers (Tuborne) or swing the gates by hand (Otla). A stalled vehicle will block this.</li>
+    <li>Close the road: turn the gate wheel (Bailey) or barrier wheel (Straw Lake), lower the barriers (Tuborne) or swing the gates by hand (Otla). A stalled vehicle will block this.</li>
     <li>Road shut? Pull that train's <b>signal lever</b>. After the train passes, restore the lever and reopen the road.</li>
   </ol>
   <p style="color:var(--dim)">Shortcuts: keys 1&ndash;4 pull levers; Bailey wheel &larr;/&rarr;; Tuborne barriers &darr; lower, &uarr; raise. The 3D version is kept in <code>index3d.html</code>.</p>
@@ -128,6 +129,15 @@ const SCENARIOS = {
       { id: 'W', name: 'West signal', desc: 'eastbound', dir: 1, group: 'T', ty: 260, x: 380, y: 236 },
       { id: 'E', name: 'East signal', desc: 'westbound', dir: -1, group: 'T', ty: 260, x: 620, y: 284 }
     ]
+  },
+  strawlake: {
+    title: 'Straw Lake', trainLen: 140, offerGap: [50, 90], carGap: [8, 16],
+    // road runs NNW-SSE, so it crosses the line on a skew; both barriers hang from the east side and lie parallel to the rails
+    crossing: { type: 'wheel', style: 'skewbarrier', skew: Math.tan(22.5 * Math.PI / 180), clearance: 58, barriers: true, wheelName: 'Barrier wheel', zone: [205, 315], stopN: 345, stopS: 175 },
+    signals: [
+      { id: 'U', name: 'Up line', desc: 'westbound', dir: -1, group: 'U', ty: 235, x: 620, y: 256 },
+      { id: 'D', name: 'Down line', desc: 'eastbound', dir: 1, group: 'D', ty: 285, x: 380, y: 264 }
+    ]
   }
 };
 
@@ -148,7 +158,7 @@ const carsInZone = () => S.cars.filter(c => c.y > zoneOf()[0] && c.y < zoneOf()[
 const gateClosed = () => S.gate >= 0.999;
 const trainRear = tr => tr.x - tr.dir * SC.trainLen;
 const sigDist = tr => (tr.sig.x - tr.x) * tr.dir;                       // >0: signal still ahead
-const rearClear = tr => (trainRear(tr) - (ROAD_X + tr.dir * 40)) * tr.dir > 0;
+const rearClear = tr => (trainRear(tr) - (ROAD_X + tr.dir * (SC.crossing.clearance || 40))) * tr.dir > 0;
 const approachLocked = () => S.trains.some(tr => (sigDist(tr) < -1 || tr.committed) && !rearClear(tr));
 const anySigOff = () => SC.signals.some(s => S.sigOff[s.id]);
 const roadOpen = () => SC.crossing.type === 'wheel' ? S.gate <= 0.12 : SC.crossing.type === 'hand' ? Math.max(S.gates.n, S.gates.s) <= 0.12 : !S.lights;
@@ -180,7 +190,7 @@ function toggleLever(id) {
   if (S.sigOff[id]) { S.sigOff[id] = false; lk.textContent = ''; say('Signal returned to danger.'); return; }
   let why = '';
   if (SC.signals.some(o => o !== sig && o.group === sig.group && S.sigOff[o.id])) why = 'Opposing signal is off';
-  else if (!gateClosed()) why = SC.crossing.type === 'barrier' ? 'Locked: barriers not down' : 'Locked: gates not closed';
+  else if (!gateClosed()) why = SC.crossing.type === 'barrier' || SC.crossing.barriers ? 'Locked: barriers not down' : 'Locked: gates not closed';
   else if (carsInZone().length) why = 'Locked: vehicle on the crossing';
   else if (S.inst[id] !== 'accepted') why = 'No train accepted on that line';
   if (why) { lk.textContent = why; say(why + '.'); el.classList.add('shake'); setTimeout(() => el.classList.remove('shake'), 320); return; }
@@ -294,7 +304,7 @@ function updateTrains(dt) {
 function spawnCar(dy) {
   const lane = dy > 0 ? ROAD_X + 15 : ROAD_X - 15;                    // drive on the left
   const cols = [0xc0c8d0, 0xd4553f, 0x3b6fd4, 0xe9c24a, 0x2f2f35, 0x58a36a];
-  S.cars.push({ x: lane, y: dy > 0 ? -20 : H + 20, dy, v: 0, wait: 0, flagged: false, col: cols[Math.floor(Math.random() * cols.length)], stall: 0, stallArmed: false });
+  S.cars.push({ x: lane, lane, y: dy > 0 ? -20 : H + 20, dy, v: 0, wait: 0, flagged: false, col: cols[Math.floor(Math.random() * cols.length)], stall: 0, stallArmed: false });
 }
 function updateCars(dt) {
   const X = SC.crossing, [zt, zb] = X.zone;
@@ -318,6 +328,7 @@ function updateCars(dt) {
     }
     c.v += Math.max(-200 * dt, Math.min(60 * dt, target - c.v));
     c.y += c.dy * c.v * dt;
+    if (X.skew) c.x = c.lane + (c.y - TRACK_Y) * X.skew;
     if (c.v < 1) { c.wait += dt; if (c.wait > 45 && !c.flagged) { c.flagged = true; S.complaints++; } }
   }
   S.breakdownArmed -= dt;
@@ -358,7 +369,7 @@ function buildPanel() {
     `<div class="lock">Bell rings when a train is offered.</div></div>`;
   h += `<div class="box"><h3>Lever frame</h3><div id="frame">` + SC.signals.map((s, i) =>
     `<div class="lever" id="lv_${s.id}"><div class="slot"><div class="handle"></div></div><small>${i + 1} &middot; ${s.name}<br>${s.desc}</small><div class="lock" id="lk_${s.id}"></div></div>`).join('') + `</div></div>`;
-  if (wheelType) h += `<div class="box ctl"><h3>Gate wheel</h3>
+  if (wheelType) h += `<div class="box ctl"><h3>${X.wheelName || 'Gate wheel'}</h3>
     <svg id="wheel" viewBox="-60 -60 120 120"><g id="wg" stroke="#c9a15a" stroke-width="5" fill="none" stroke-linecap="round"><circle r="48"/><circle r="8" fill="#c9a15a"/><line x1="-48" y1="0" x2="48" y2="0"/><line x1="0" y1="-48" x2="0" y2="48"/><line x1="-34" y1="-34" x2="34" y2="34"/><line x1="34" y1="-34" x2="-34" y2="34"/></g></svg>
     <div class="row"><button id="bOpen">&#9664; Open</button><button id="bClose">Close &#9654;</button></div>
     <div class="gbar"><i id="gfill"></i></div><div class="lock" id="lkG"></div></div>`;
@@ -422,9 +433,11 @@ const tracksOf = () => [...new Set(SC.signals.map(s => s.ty))];
 function drawBase() {
   ctx.fillStyle = '#35552e'; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#2d4a27'; for (let i = 0; i < 50; i++) ctx.fillRect((i * 173) % W, (i * 97) % H, 18, 6);
-  ctx.fillStyle = '#4a4d52'; ctx.fillRect(ROAD_X - 30, 0, 60, H);
+  const k = SC.crossing.skew || 0, half = 30 * Math.sqrt(1 + k * k), rx = y => ROAD_X + (y - TRACK_Y) * k;
+  const quad = (y0, y1) => { ctx.beginPath(); ctx.moveTo(rx(y0) - half, y0); ctx.lineTo(rx(y0) + half, y0); ctx.lineTo(rx(y1) + half, y1); ctx.lineTo(rx(y1) - half, y1); ctx.fill(); };
+  ctx.fillStyle = '#4a4d52'; quad(0, H);
   ctx.setLineDash([16, 14]); ctx.strokeStyle = '#d8d8c8'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(ROAD_X, 0); ctx.lineTo(ROAD_X, H); ctx.stroke(); ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(rx(0), 0); ctx.lineTo(rx(H), H); ctx.stroke(); ctx.setLineDash([]);
   const ys = tracksOf();
   for (const ty of ys) {
     ctx.fillStyle = '#6d675e'; ctx.fillRect(0, ty - 14, W, 28);
@@ -432,8 +445,8 @@ function drawBase() {
     ctx.fillStyle = '#9aa0a6'; ctx.fillRect(0, ty - 7, W, 2.5); ctx.fillRect(0, ty + 5, W, 2.5);
   }
   const top = Math.min(...ys) - 14, bot = Math.max(...ys) + 14;
-  ctx.fillStyle = '#3d3f43'; ctx.fillRect(ROAD_X - 30, top, 60, bot - top);
-  ctx.fillStyle = '#9aa0a6'; for (const ty of ys) { ctx.fillRect(ROAD_X - 30, ty - 7, 60, 2.5); ctx.fillRect(ROAD_X - 30, ty + 5, 60, 2.5); }
+  ctx.fillStyle = '#3d3f43'; quad(top, bot);
+  ctx.fillStyle = '#9aa0a6'; for (const ty of ys) for (const r of [ty - 7, ty + 5]) ctx.fillRect(rx(r) - half, r, half * 2, 2.5);
 }
 
 function text(t, x, y, size = 11, color = '#e8e2d0', align = 'center') {
@@ -457,6 +470,17 @@ const SCENERY = {
       ctx.fillStyle = '#8a8f95'; for (let i = 0; i < 4; i++) ctx.fillRect(757 + i * 7, 150, 6, 18);   // steps
       signalBox(682, 131, 76, 58, 'OTLA');
       ctx.fillStyle = '#1f4f9a'; ctx.fillRect(540, 170, 58, 20); text('OTLA', 569, 184, 11, '#fff');
+    },
+    over() {}
+  },
+  strawlake: {
+    under() {
+      ctx.fillStyle = '#2d6a9f'; ctx.beginPath(); ctx.ellipse(210, 405, 170, 52, -.1, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#4f93c9'; ctx.lineWidth = 3; ctx.stroke();
+      ctx.strokeStyle = '#8a9a4a'; ctx.lineWidth = 2;
+      for (let i = 0; i < 22; i++) { const x = 60 + i * 14, y = 368 + Math.sin(i * 1.7) * 6; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 2, y - 10); ctx.stroke(); }
+      text('STRAW LAKE', 210, 410, 12, '#cfe6f7');
+      signalBox(640, 115, 74, 46, 'STRAW LAKE');
     },
     over() {}
   },
@@ -498,6 +522,17 @@ function armBar(px, py, ang, len) {
   ctx.restore(); ctx.fillStyle = '#555'; ctx.beginPath(); ctx.arc(px, py, 4, 0, 7); ctx.fill();
 }
 const CROSSING = {
+  skewbarrier() {
+    // two full barriers on the east verge, lying parallel to the rails when down; lamps flash while they move
+    const k = SC.crossing.skew, half = 30 * Math.sqrt(1 + k * k), g = S.gate;
+    for (const by of [200, 320]) {
+      const px = ROAD_X + (by - TRACK_Y) * k + half + 5, len = Math.max(6, (half * 2 + 10) * g);
+      ctx.fillStyle = '#eee'; ctx.fillRect(px - len, by - 3, len, 6);
+      ctx.fillStyle = '#d32'; for (let i = 0; i < len; i += 14) ctx.fillRect(px - i - Math.min(7, len - i), by - 3, Math.min(7, len - i), 6);
+      ctx.fillStyle = '#555'; ctx.fillRect(px - 2, by - 7, 9, 14);
+      ctx.fillStyle = g >= .999 ? '#ff3030' : g > .02 && Math.floor(S.t * 3) % 2 ? '#ffb020' : '#553'; ctx.beginPath(); ctx.arc(px + 8, by - 10, 4.5, 0, 7); ctx.fill();
+    }
+  },
   wheel() {
     const g = S.gate, a = (a0, a1) => a0 + (a1 - a0) * g;
     armBar(ROAD_X + 34, 205, a(-Math.PI / 2, -Math.PI), 62); armBar(ROAD_X - 34, 315, a(Math.PI / 2, 0), 62);
@@ -537,11 +572,14 @@ function drawTrains() {
   }
 }
 function drawCars() {
+  const rot = -Math.atan(SC.crossing.skew || 0);
   for (const c of S.cars) {
-    ctx.fillStyle = css(c.col); ctx.fillRect(c.x - 7, c.y - 11, 14, 22);
-    ctx.fillStyle = '#0006'; ctx.fillRect(c.x - 5, c.y - 5 + (c.dy > 0 ? 3 : -3), 10, 7);
-    ctx.fillStyle = '#ffe9a0'; ctx.fillRect(c.x - 6, c.y + (c.dy > 0 ? 9 : -11), 3, 2); ctx.fillRect(c.x + 3, c.y + (c.dy > 0 ? 9 : -11), 3, 2);
-    if (c.stall > 0 && Math.floor(S.t * 3) % 2) { ctx.fillStyle = '#ffb020'; ctx.fillRect(c.x - 9, c.y - 4, 3, 3); ctx.fillRect(c.x + 6, c.y - 4, 3, 3); }
+    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(rot);
+    ctx.fillStyle = css(c.col); ctx.fillRect(-7, -11, 14, 22);
+    ctx.fillStyle = '#0006'; ctx.fillRect(-5, -5 + (c.dy > 0 ? 3 : -3), 10, 7);
+    ctx.fillStyle = '#ffe9a0'; ctx.fillRect(-6, c.dy > 0 ? 9 : -11, 3, 2); ctx.fillRect(3, c.dy > 0 ? 9 : -11, 3, 2);
+    if (c.stall > 0 && Math.floor(S.t * 3) % 2) { ctx.fillStyle = '#ffb020'; ctx.fillRect(-9, -4, 3, 3); ctx.fillRect(6, -4, 3, 3); }
+    ctx.restore();
   }
 }
 
@@ -549,7 +587,7 @@ function render() {
   if (!S) return;
   drawBase(); SCENERY[SC.key].under(); drawTrains(); drawCars();
   for (const s of SC.signals) drawSignal(s);
-  CROSSING[SC.crossing.type](); SCENERY[SC.key].over();
+  CROSSING[SC.crossing.style || SC.crossing.type](); SCENERY[SC.key].over();
   text('← WEST', 10, 470, 12, '#e6e9ec99', 'left'); text('EAST →', W - 10, 470, 12, '#e6e9ec99', 'right');
   updatePanel();
   $('score').textContent = S.score; $('trains').textContent = S.trainsDone;
