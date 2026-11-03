@@ -92,7 +92,7 @@
     <li>Close the road: turn the gate wheel (Bailey) or barrier wheel (Straw Lake), lower the barriers (Tuborne) or switch on the crossing lights (Lee Forest, Fourth Lane Quay Footpath and Brickworks) or swing the gates by hand (Otla). A stalled vehicle will block this.</li>
     <li>Road shut? Pull that train's <b>signal lever</b>. After the train passes, restore the lever and reopen the road.</li>
   </ol>
-  <p style="color:var(--dim)">Shortcuts: keys 1&ndash;4 pull levers; Bailey wheel &larr;/&rarr;; Tuborne barriers &darr; lower, &uarr; raise. The 3D version is kept in <code>index3d.html</code>.</p>
+  <p style="color:var(--dim)">Shortcuts: keys 1&ndash;4 pull levers; &rarr; shuts the road and &larr; opens it at every crossing (wheel, barriers, gates and lights). The 3D version is kept in <code>index3d.html</code>.</p>
 </div></div>
 
 <script>
@@ -502,7 +502,11 @@ addEventListener('keydown', e => {
   keys[e.key.toLowerCase()] = true;
   if (/^[1-4]$/.test(e.key) && SC.signals[+e.key - 1]) toggleLever(SC.signals[+e.key - 1].id);
   if (SC.crossing.type === 'wheel') { if (e.key === 'ArrowLeft') held.open = true; if (e.key === 'ArrowRight') held.close = true; }
-  else { if (e.key === 'ArrowDown') cmdBarrier('lower'); if (e.key === 'ArrowUp') cmdBarrier('raise'); }
+  else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {        // right shuts the road, left opens it
+    const shut = e.key === 'ArrowRight';
+    if (SC.crossing.type === 'hand') handAuto(shut ? 1 : 0); else cmdBarrier(shut ? 'lower' : 'raise');
+  }
+  if (S.running && e.key.startsWith('Arrow')) e.preventDefault();
 });
 addEventListener('keyup', e => {
   keys[e.key.toLowerCase()] = false;
