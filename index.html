@@ -218,7 +218,7 @@ function swingGate(side) {
 function handAuto(want) {
   if (!S.running) return;
   if (!want && gateLockReason()) { say(gateLockReason()); return; }
-  S.auto = { want, t: 10 }; say(want ? 'Sending the signalman out to shut the gates.' : 'Sending the signalman out to open the gates.', 4);
+  S.auto = { want, t: 0 }; say(want ? 'Sending the signalman out to shut the gates.' : 'Sending the signalman out to open the gates.', 4);
 }
 function updateHand(dt) {
   const lk = $('lkG');
