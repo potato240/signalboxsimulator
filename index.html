@@ -87,7 +87,7 @@
   </div>
   <ol>
     <li>The <b>bell</b> rings when a train is offered. <b>Accept</b> it at its block instrument.</li>
-    <li>Close the road: turn the gate wheel (Bailey) or barrier wheel (Straw Lake), lower the barriers (Tuborne) or set the road lights red and wait out the clear time (Lee Forest) or swing the gates by hand (Otla). A stalled vehicle will block this.</li>
+    <li>Close the road: turn the gate wheel (Bailey) or barrier wheel (Straw Lake), lower the barriers (Tuborne) or set the road lights red (Lee Forest) or swing the gates by hand (Otla). A stalled vehicle will block this.</li>
     <li>Road shut? Pull that train's <b>signal lever</b>. After the train passes, restore the lever and reopen the road.</li>
   </ol>
   <p style="color:var(--dim)">Shortcuts: keys 1&ndash;4 pull levers; Bailey wheel &larr;/&rarr;; Tuborne barriers &darr; lower, &uarr; raise. The 3D version is kept in <code>index3d.html</code>.</p>
@@ -201,7 +201,7 @@ function toggleLever(id) {
   if (S.sigOff[id]) { S.sigOff[id] = false; lk.textContent = ''; say('Signal returned to danger.'); return; }
   let why = '';
   if (SC.signals.some(o => o !== sig && o.group === sig.group && S.sigOff[o.id])) why = 'Opposing signal is off';
-  else if (!gateClosed()) why = SC.crossing.type === 'lights' ? 'Locked: road lights not red long enough' : SC.crossing.type === 'barrier' || SC.crossing.barriers ? 'Locked: barriers not down' : 'Locked: gates not closed';
+  else if (!gateClosed()) why = SC.crossing.type === 'lights' ? 'Locked: road lights not red yet' : SC.crossing.type === 'barrier' || SC.crossing.barriers ? 'Locked: barriers not down' : 'Locked: gates not closed';
   else if (carsInZone().length) why = 'Locked: vehicle on the crossing';
   else if (S.inst[id] !== 'accepted') why = 'No train accepted on that line';
   if (why) { lk.textContent = why; say(why + '.'); el.classList.add('shake'); setTimeout(() => el.classList.remove('shake'), 320); return; }
@@ -271,8 +271,8 @@ function updateCrossing(dt) {
   if (SC.crossing.type === 'hand') return updateHand(dt);
   if (SC.crossing.type === 'lights') {
     if (S.cmd === 'red') { S.lightT += dt; if (S.lightT >= 2) S.lights = true; }
-    S.gate = S.lights ? Math.min(1, (S.lightT - 2) / 12) : 0;      // fraction of the road-user clear time that has run
-    $('lkG').textContent = !S.cmd ? 'Road lights green' : !S.lights ? 'Lights changing to red\u2026' : S.gate < 1 ? `Clear time: ${Math.ceil(12 * (1 - S.gate))}s` : 'Clear time done \u2014 safe to signal';
+    S.gate = S.lights ? 1 : 0;      // no clear time: signals can be cleared as soon as the lights show red
+    $('lkG').textContent = !S.cmd ? 'Road lights green' : !S.lights ? 'Lights changing to red\u2026' : 'Lights red \u2014 safe to signal';
     return;
   }
   if (SC.crossing.type === 'wheel') {
@@ -413,7 +413,7 @@ function buildPanel() {
     <div class="lamps"><span class="lamp on" id="lampRoad">Road lights green</span></div>
     <div class="row"><button id="bRed">Set lights red</button><button id="bGreen">Set lights green</button></div>
     <div class="gbar"><i id="gfill"></i></div><div class="lock" id="lkG"></div>
-    <div class="lock">No gates or barriers: the lights are all that stops the road. Wait out the clear time before signalling a train.</div></div>`;
+    <div class="lock">No gates or barriers: the lights are all that stops the road. Signal a train once they show red.</div></div>`;
   else if (X.type === 'hand') h += `<div class="box ctl"><h3>Hand-swung gates</h3>
     <div class="lamps"><span class="lamp" id="lampN">North gates</span><span class="lamp" id="lampS">South gates</span></div>
     <div class="row"><button id="bCloseAll">Send signalman: shut</button><button id="bOpenAll">Send signalman: open</button></div>
