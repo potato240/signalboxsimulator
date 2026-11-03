@@ -697,14 +697,15 @@ function drawFlashing() {
 }
 const CROSSING = {
   trolley() {
-    // four trolley gates: two on each side of the line, rolling in from housings at the road edge when the wheel is turned
+    // four trolley gates: each long bar slides through a box at the road edge; open, it pokes out of the back of the box
     const g = S.gate, moving = g > .02 && g < .999, blink = Math.floor(S.t * 3) % 2, L = 28;
     for (const by of [200, 320]) for (const s of [-1, 1]) {
-      const hx = ROAD_X + s * 30, len = 4 + (L - 4) * g, x0 = s < 0 ? hx : hx - len;
-      ctx.fillStyle = '#555'; ctx.fillRect(s < 0 ? hx - 12 : hx, by - 6, 12, 12);
+      const hx = ROAD_X + s * 30, BAR = 38, pt = 3 - (L + 3) * g, tip = hx + s * pt, tail = hx + s * (pt + BAR), x0 = Math.min(tip, tail), len = BAR;
       ctx.fillStyle = '#eee'; ctx.fillRect(x0, by - 3, len, 6);
-      ctx.fillStyle = '#d32'; for (let i = 0; i < len; i += 8) ctx.fillRect(s < 0 ? x0 + i : x0 + len - i - Math.min(4, len - i), by - 3, Math.min(4, len - i), 6);
-      ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(s < 0 ? x0 + len : x0, by + 5, 2.5, 0, 7); ctx.fill();        // trolley wheel
+      ctx.fillStyle = '#d32'; for (let i = 0; i < len; i += 8) { const w = Math.min(4, len - i); ctx.fillRect(s < 0 ? tip - i - w : tip + i, by - 3, w, 6); }
+      ctx.fillStyle = '#555'; ctx.fillRect(s < 0 ? hx - 12 : hx, by - 6, 12, 12);                    // the box, drawn over the bar so the bar passes through it
+      ctx.fillStyle = '#2a2a2a'; ctx.fillRect(s < 0 ? hx - 2 : hx, by - 3.5, 2, 7);                   // slot the bar passes through
+      if (g > .2) { ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(tip, by + 5, 2.5, 0, 7); ctx.fill(); }   // trolley wheel
       ctx.fillStyle = g >= .999 ? '#ff3030' : moving && blink ? '#ffb020' : '#553'; ctx.beginPath(); ctx.arc(hx + s * 6, by - 10, 3.5, 0, 7); ctx.fill();
     }
   },
