@@ -81,13 +81,15 @@
   <div class="picks">
     <button class="pick" data-box="bailey"><b>Bailey Crossing</b><span>Quiet single line. Wheel-operated gates and two protecting signals. A gentle start.</span></button>
     <button class="pick" data-box="otla"><b>Otla</b><span>Quiet single line with hand-swung gates and no road lights. The signalman has to walk out to swing them.</span></button>
+    <button class="pick" data-box="quayfootpath"><b>Fourth Lane Quay Footpath</b><span>A footpath to the quay crosses the line. A red light on each side stops the walkers.</span></button>
+    <button class="pick" data-box="brickworks"><b>Fourth Lane Brickworks</b><span>An open crossing with no gates: a pair of flashing lights each side stops the works traffic.</span></button>
     <button class="pick" data-box="leeforest"><b>Lee Forest</b><span>Single line through woodland. A miniature-warning-lights crossing: no gates or barriers, just red and green road lights.</span></button>
     <button class="pick" data-box="strawlake"><b>Straw Lake</b><span>Quiet two-track line. Wheel-operated full barriers on a skewed road, both hanging from the east side.</span></button>
     <button class="pick" data-box="tuborne"><b>Tuborne Station</b><span>Busy four-track main line with a station. Full barriers, four signals, and a footbridge with stairs to the platforms.</span></button>
   </div>
   <ol>
     <li>The <b>bell</b> rings when a train is offered. <b>Accept</b> it at its block instrument.</li>
-    <li>Close the road: turn the gate wheel (Bailey) or barrier wheel (Straw Lake), lower the barriers (Tuborne) or set the road lights red (Lee Forest) or swing the gates by hand (Otla). A stalled vehicle will block this.</li>
+    <li>Close the road: turn the gate wheel (Bailey) or barrier wheel (Straw Lake), lower the barriers (Tuborne) or switch on the crossing lights (Lee Forest, Fourth Lane Quay Footpath and Brickworks) or swing the gates by hand (Otla). A stalled vehicle will block this.</li>
     <li>Road shut? Pull that train's <b>signal lever</b>. After the train passes, restore the lever and reopen the road.</li>
   </ol>
   <p style="color:var(--dim)">Shortcuts: keys 1&ndash;4 pull levers; Bailey wheel &larr;/&rarr;; Tuborne barriers &darr; lower, &uarr; raise. The 3D version is kept in <code>index3d.html</code>.</p>
@@ -145,6 +147,33 @@ const SCENARIOS = {
     title: 'Lee Forest', trainLen: 140, offerGap: [45, 80], carGap: [7, 15],
     // miniature warning lights only: no gates, no barriers. Everyone obeys the red.
     crossing: { type: 'lights', zone: [215, 305], stopN: 322, stopS: 198, runners: 0 },
+    signals: [
+      { id: 'W', name: 'West signal', desc: 'eastbound', dir: 1, group: 'T', ty: 260, x: 380, y: 236 },
+      { id: 'E', name: 'East signal', desc: 'westbound', dir: -1, group: 'T', ty: 260, x: 620, y: 284 }
+    ]
+  },
+  quayfootpath: {
+    title: 'Fourth Lane Quay Footpath', trainLen: 140, offerGap: [40, 75], carGap: [6, 14],
+    // a footpath across the line to the quay: a red light each side, walkers on foot
+    crossing: {
+      type: 'lights', style: 'footpath', ped: true, roadHalf: 9, roadColor: '#b5a98a', deckColor: '#8a7f68', noCentre: true, bounds: [60, 415],
+      delay: 1, zone: [232, 288], stopN: 302, stopS: 218,
+      ui: { title: 'Footpath red lights', red: 'Show red lights', green: 'Lights off', lampOff: 'Footpath lights off', lampOn: 'Footpath lights RED', wait: 'Red lights coming on\u2026', ready: 'Red lights on \u2014 safe to signal',
+            msgOn: 'Red lights coming on.', msgOff: 'Red lights off.', note: 'A red light on each side of the line stops walkers. Signal a train once they show red and the crossing is clear.' }
+    },
+    signals: [
+      { id: 'W', name: 'West signal', desc: 'eastbound', dir: 1, group: 'T', ty: 260, x: 380, y: 236 },
+      { id: 'E', name: 'East signal', desc: 'westbound', dir: -1, group: 'T', ty: 260, x: 620, y: 284 }
+    ]
+  },
+  brickworks: {
+    title: 'Fourth Lane Brickworks', trainLen: 140, offerGap: [40, 75], carGap: [9, 18],
+    // open crossing (no gates or barriers) with a pair of flashing lights each side: amber, then alternating red
+    crossing: {
+      type: 'lights', style: 'aocl', delay: 3, zone: [215, 305], stopN: 322, stopS: 198, runners: 0,
+      ui: { title: 'Crossing flashing lights', red: 'Start flashing lights', green: 'Stop lights', lampOff: 'Lights off', lampOn: 'Lights FLASHING red', wait: 'Amber flashing\u2026', ready: 'Red flashing \u2014 safe to signal',
+            msgOn: 'Flashing lights starting.', msgOff: 'Flashing lights off.', note: 'Open crossing: a pair of flashing lights each side. They flash amber, then alternating red. Signal a train once they flash red.' }
+    },
     signals: [
       { id: 'W', name: 'West signal', desc: 'eastbound', dir: 1, group: 'T', ty: 260, x: 380, y: 236 },
       { id: 'E', name: 'East signal', desc: 'westbound', dir: -1, group: 'T', ty: 260, x: 620, y: 284 }
@@ -214,11 +243,14 @@ function accept(id) {
   S.trains.push({ sig, dir: sig.dir, x: sig.dir > 0 ? -1000 : W + 1000, v: sig.vmax || 110, served: !sig.station, dwell: 0, committed: false, passedAtDanger: false });
   say(`Accepted ${sig.name} train. Close the road when it is clear.`);
 }
+const ui = () => Object.assign({ title: 'Road warning lights', red: 'Set lights red', green: 'Set lights green', lampOff: 'Road lights green', lampOn: 'Road lights RED', lampWait: 'Changing\u2026',
+  wait: 'Lights changing to red\u2026', ready: 'Lights red \u2014 safe to signal', msgOn: 'Road lights changing to red.', msgOff: 'Road lights green.',
+  note: 'No gates or barriers: the lights are all that stops the road. Signal a train once they show red.' }, SC.crossing.ui);
 function cmdLights(cmd) {
-  if (cmd === 'lower') { if (S.lights || S.cmd === 'red') return; S.cmd = 'red'; S.lightT = 0; say('Road lights changing to red.', 3); }
+  if (cmd === 'lower') { if (S.lights || S.cmd === 'red') return; S.cmd = 'red'; S.lightT = 0; say(ui().msgOn, 3); }
   else if (anySigOff()) say('Locked: a signal is off.');
   else if (approachLocked()) say('Locked: train on the crossing.');
-  else if (S.lights || S.cmd) { S.cmd = null; S.lights = false; S.lightT = 0; S.gate = 0; say('Road lights green.', 3); }
+  else if (S.lights || S.cmd) { S.cmd = null; S.lights = false; S.lightT = 0; S.gate = 0; say(ui().msgOff, 3); }
 }
 function cmdBarrier(cmd) {
   if (!S.running) return;
@@ -270,9 +302,9 @@ function updateHand(dt) {
 function updateCrossing(dt) {
   if (SC.crossing.type === 'hand') return updateHand(dt);
   if (SC.crossing.type === 'lights') {
-    if (S.cmd === 'red') { S.lightT += dt; if (S.lightT >= 2) S.lights = true; }
+    if (S.cmd === 'red') { S.lightT += dt; if (S.lightT >= (SC.crossing.delay ?? 2)) S.lights = true; }
     S.gate = S.lights ? 1 : 0;      // no clear time: signals can be cleared as soon as the lights show red
-    $('lkG').textContent = !S.cmd ? 'Road lights green' : !S.lights ? 'Lights changing to red\u2026' : 'Lights red \u2014 safe to signal';
+    $('lkG').textContent = !S.cmd ? ui().lampOff : !S.lights ? ui().wait : ui().ready;
     return;
   }
   if (SC.crossing.type === 'wheel') {
@@ -336,9 +368,15 @@ function checkCollisions() {
   if (S.cars.some(c => c.hit)) S.cars = S.cars.filter(c => !c.hit);
 }
 function spawnCar(dy) {
+  const X = SC.crossing, [b0, b1] = X.bounds || [-20, H + 20], y = dy > 0 ? b0 : b1;
+  if (X.ped) {                                                           // a walker on the footpath
+    const lane = ROAD_X + (dy > 0 ? 5 : -5), cols = [0x3b6fd4, 0xd4553f, 0x58a36a, 0xe9c24a, 0x7a4fb0, 0x2f2f35];
+    S.cars.push({ ped: true, runner: false, wasBefore: true, x: lane, lane, y, dy, v: 0, wait: 0, flagged: false, col: cols[Math.floor(Math.random() * cols.length)], stall: 0, stallArmed: true });
+    return;
+  }
   const lane = dy > 0 ? ROAD_X + 15 : ROAD_X - 15;                    // drive on the left
   const cols = [0xc0c8d0, 0xd4553f, 0x3b6fd4, 0xe9c24a, 0x2f2f35, 0x58a36a];
-  S.cars.push({ runner: Math.random() < (SC.crossing.runners || 0), wasBefore: true, x: lane, lane, y: dy > 0 ? -20 : H + 20, dy, v: 0, wait: 0, flagged: false, col: cols[Math.floor(Math.random() * cols.length)], stall: 0, stallArmed: false });
+  S.cars.push({ runner: Math.random() < (X.runners || 0), wasBefore: true, x: lane, lane, y, dy, v: 0, wait: 0, flagged: false, col: cols[Math.floor(Math.random() * cols.length)], stall: 0, stallArmed: false });
 }
 function updateCars(dt) {
   const X = SC.crossing, [zt, zb] = X.zone;
@@ -348,27 +386,29 @@ function updateCars(dt) {
   }
   const open = roadOpen();
   for (const c of S.cars) {
-    const front = c.y + c.dy * 15, stopY = c.dy < 0 ? X.stopN : X.stopS, before = (front - stopY) * c.dy < 0;
-    let target = 60;
+    const front = c.y + c.dy * (c.ped ? 5 : 15), stopY = c.dy < 0 ? X.stopN : X.stopS, before = (front - stopY) * c.dy < 0;
+    const top = c.ped ? 22 : 60; let target = top;
     if (c.stall > 0) { c.stall -= dt; target = 0; }
-    else if (before && !open && !c.runner) { const room = (stopY - front) * c.dy; target = room <= 1 ? 0 : Math.min(60, Math.sqrt(2 * 80 * room)); }
+    else if (before && !open && !c.runner) { const room = (stopY - front) * c.dy; target = room <= 1 ? 0 : Math.min(top, Math.sqrt(2 * 80 * room)); }
     for (const o of S.cars) {
       if (o === c || o.dy !== c.dy) continue;
       const gap = (o.y - c.y) * c.dy;
-      if (gap > 0 && gap < 50) target = Math.min(target, gap < 42 ? 0 : o.v);
+      const g1 = c.ped ? 14 : 50, g0 = c.ped ? 10 : 42;
+      if (gap > 0 && gap < g1) target = Math.min(target, gap < g0 ? 0 : o.v);
     }
     if (!c.stallArmed && S.trainsDone >= 2 && !before && c.y > zt + 15 && c.y < zb - 15 && S.breakdownArmed <= 0 && Math.random() < 0.004) {
       c.stall = 22; c.stallArmed = true; S.breakdownArmed = 120; say('A car has broken down on the crossing!', 6);
     }
     if (c.runner && c.wasBefore && !before && !open) say('A vehicle has run the red light!', 5);
     c.wasBefore = before;
-    c.v += Math.max(-200 * dt, Math.min(60 * dt, target - c.v));
+    c.v += Math.max(-200 * dt, Math.min(top * dt, target - c.v));
     c.y += c.dy * c.v * dt;
     if (X.skew) c.x = c.lane + (c.y - TRACK_Y) * X.skew;
     if (c.v < 1) { c.wait += dt; if (c.wait > 45 && !c.flagged) { c.flagged = true; S.complaints++; } }
   }
   S.breakdownArmed -= dt;
-  S.cars = S.cars.filter(c => c.y > -40 && c.y < H + 40);
+  const [b0, b1] = X.bounds || [-20, H + 20];
+  S.cars = S.cars.filter(c => c.y > b0 - 20 && c.y < b1 + 20);
 }
 
 function updateOffers(dt) {
@@ -409,11 +449,11 @@ function buildPanel() {
     <svg id="wheel" viewBox="-60 -60 120 120"><g id="wg" stroke="#c9a15a" stroke-width="5" fill="none" stroke-linecap="round"><circle r="48"/><circle r="8" fill="#c9a15a"/><line x1="-48" y1="0" x2="48" y2="0"/><line x1="0" y1="-48" x2="0" y2="48"/><line x1="-34" y1="-34" x2="34" y2="34"/><line x1="34" y1="-34" x2="-34" y2="34"/></g></svg>
     <div class="row"><button id="bOpen">&#9664; Open</button><button id="bClose">Close &#9654;</button></div>
     <div class="gbar"><i id="gfill"></i></div><div class="lock" id="lkG"></div></div>`;
-  else if (X.type === 'lights') h += `<div class="box ctl"><h3>Road warning lights</h3>
-    <div class="lamps"><span class="lamp on" id="lampRoad">Road lights green</span></div>
-    <div class="row"><button id="bRed">Set lights red</button><button id="bGreen">Set lights green</button></div>
+  else if (X.type === 'lights') h += `<div class="box ctl"><h3>${ui().title}</h3>
+    <div class="lamps"><span class="lamp on" id="lampRoad">${ui().lampOff}</span></div>
+    <div class="row"><button id="bRed">${ui().red}</button><button id="bGreen">${ui().green}</button></div>
     <div class="gbar"><i id="gfill"></i></div><div class="lock" id="lkG"></div>
-    <div class="lock">No gates or barriers: the lights are all that stops the road. Signal a train once they show red.</div></div>`;
+    <div class="lock">${ui().note}</div></div>`;
   else if (X.type === 'hand') h += `<div class="box ctl"><h3>Hand-swung gates</h3>
     <div class="lamps"><span class="lamp" id="lampN">North gates</span><span class="lamp" id="lampS">South gates</span></div>
     <div class="row"><button id="bCloseAll">Send signalman: shut</button><button id="bOpenAll">Send signalman: open</button></div>
@@ -444,7 +484,7 @@ function updatePanel() {
   $('gfill').style.width = (S.gate * 100) + '%';
   if (SC.crossing.type === 'wheel') $('wg').setAttribute('transform', `rotate(${S.gate * 1080})`);
   else if (SC.crossing.type === 'lights') {
-    $('lampRoad').className = 'lamp ' + (S.lights ? 'bad' : 'on'); $('lampRoad').textContent = S.lights ? 'Road lights RED' : S.cmd ? 'Changing\u2026' : 'Road lights green';
+    $('lampRoad').className = 'lamp ' + (S.lights ? 'bad' : 'on'); $('lampRoad').textContent = S.lights ? ui().lampOn : S.cmd ? ui().lampWait : ui().lampOff;
   }
   else if (SC.crossing.type === 'hand') {
     $('lampN').className = 'lamp' + (S.gates.n >= .999 ? ' on' : ''); $('lampS').className = 'lamp' + (S.gates.s >= .999 ? ' on' : '');
@@ -478,10 +518,10 @@ const tracksOf = () => [...new Set(SC.signals.map(s => s.ty))];
 function drawBase() {
   ctx.fillStyle = '#35552e'; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#2d4a27'; for (let i = 0; i < 50; i++) ctx.fillRect((i * 173) % W, (i * 97) % H, 18, 6);
-  const k = SC.crossing.skew || 0, half = 30 * Math.sqrt(1 + k * k), rx = y => ROAD_X + (y - TRACK_Y) * k;
+  const k = SC.crossing.skew || 0, half = (SC.crossing.roadHalf || 30) * Math.sqrt(1 + k * k), rx = y => ROAD_X + (y - TRACK_Y) * k;
   const quad = (y0, y1) => { ctx.beginPath(); ctx.moveTo(rx(y0) - half, y0); ctx.lineTo(rx(y0) + half, y0); ctx.lineTo(rx(y1) + half, y1); ctx.lineTo(rx(y1) - half, y1); ctx.fill(); };
-  ctx.fillStyle = '#4a4d52'; quad(0, H);
-  ctx.setLineDash([16, 14]); ctx.strokeStyle = '#d8d8c8'; ctx.lineWidth = 2;
+  ctx.fillStyle = SC.crossing.roadColor || '#4a4d52'; quad(0, H);
+  ctx.setLineDash([16, 14]); ctx.strokeStyle = SC.crossing.noCentre ? 'rgba(0,0,0,0)' : '#d8d8c8'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(rx(0), 0); ctx.lineTo(rx(H), H); ctx.stroke(); ctx.setLineDash([]);
   const ys = tracksOf();
   for (const ty of ys) {
@@ -490,7 +530,7 @@ function drawBase() {
     ctx.fillStyle = '#9aa0a6'; ctx.fillRect(0, ty - 7, W, 2.5); ctx.fillRect(0, ty + 5, W, 2.5);
   }
   const top = Math.min(...ys) - 14, bot = Math.max(...ys) + 14;
-  ctx.fillStyle = '#3d3f43'; quad(top, bot);
+  ctx.fillStyle = SC.crossing.deckColor || '#3d3f43'; quad(top, bot);
   ctx.fillStyle = '#9aa0a6'; for (const ty of ys) for (const r of [ty - 7, ty + 5]) ctx.fillRect(rx(r) - half, r, half * 2, 2.5);
 }
 
@@ -543,6 +583,34 @@ const SCENERY = {
     },
     over() {}
   },
+  quayfootpath: {
+    under() {
+      ctx.fillStyle = '#7e8187'; ctx.fillRect(0, 392, W, 26);                              // quay apron
+      ctx.fillStyle = '#2a5f8f'; ctx.fillRect(0, 418, W, 62);                              // harbour
+      ctx.strokeStyle = '#4f93c9'; ctx.lineWidth = 1;
+      for (let i = 0; i < 26; i++) { ctx.beginPath(); ctx.moveTo(i * 40 + 6, 436 + (i % 3) * 10); ctx.lineTo(i * 40 + 26, 436 + (i % 3) * 10); ctx.stroke(); }
+      ctx.fillStyle = '#333'; for (let x = 40; x < W; x += 90) ctx.fillRect(x, 412, 6, 6);   // bollards
+      ctx.fillStyle = '#d8d2c2'; ctx.beginPath(); ctx.moveTo(130, 440); ctx.lineTo(250, 440); ctx.lineTo(236, 464); ctx.lineTo(146, 464); ctx.fill();
+      ctx.fillStyle = '#b23b3b'; ctx.fillRect(170, 430, 40, 12);
+      ctx.fillStyle = '#e8c53a'; ctx.beginPath(); ctx.moveTo(700, 438); ctx.lineTo(840, 438); ctx.lineTo(822, 464); ctx.lineTo(716, 464); ctx.fill();
+      ctx.fillStyle = '#2f6bb5'; ctx.fillRect(740, 424, 50, 14);
+      for (const [x, y, c] of [[600, 334, '#b5482f'], [642, 334, '#2f6bb5'], [684, 334, '#c9a24a'], [600, 358, '#3f8a56'], [642, 358, '#b5482f']]) { ctx.fillStyle = c; ctx.fillRect(x, y, 38, 20); }
+      signalBox(610, 140, 74, 46, 'FOURTH LANE QUAY');
+    },
+    over() {}
+  },
+  brickworks: {
+    under() {
+      ctx.fillStyle = '#8a6a44'; ctx.beginPath(); ctx.ellipse(220, 395, 150, 46, 0, 0, 7); ctx.fill();    // clay pit
+      ctx.fillStyle = '#6d5234'; ctx.beginPath(); ctx.ellipse(220, 400, 110, 30, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#9b4a32'; ctx.fillRect(580, 330, 150, 70); ctx.fillStyle = '#6f2f20'; ctx.fillRect(580, 322, 150, 10);   // kiln shed
+      ctx.fillStyle = '#7a3a28'; ctx.fillRect(740, 300, 18, 100); ctx.fillStyle = '#444'; ctx.fillRect(738, 296, 22, 6);        // chimney
+      for (const x of [580, 620, 660, 700]) { ctx.fillStyle = '#c0623a'; ctx.fillRect(x, 420, 32, 20); ctx.strokeStyle = '#8a4328'; ctx.strokeRect(x, 420, 32, 20); }
+      text('BRICKWORKS', 655, 372, 11, '#f4e4d4');
+      signalBox(610, 140, 74, 46, 'FOURTH LANE BRICKWORKS');
+    },
+    over() {}
+  },
   tuborne: {
     under() {
       for (const [y, edge] of [[120, 166], [350, 350]]) {
@@ -580,8 +648,30 @@ function armBar(px, py, ang, len) {
   ctx.fillStyle = '#d32'; for (let i = 0; i < len; i += 14) ctx.fillRect(i, -3, Math.min(7, len - i), 6);
   ctx.restore(); ctx.fillStyle = '#555'; ctx.beginPath(); ctx.arc(px, py, 4, 0, 7); ctx.fill();
 }
+function drawFootLights() {
+  for (const [x, y] of [[ROAD_X + 16, 222], [ROAD_X - 16, 298]]) {
+    ctx.fillStyle = '#4a4f56'; ctx.fillRect(x - 1.5, y - 2, 3, 16);
+    ctx.fillStyle = '#111'; ctx.fillRect(x - 5, y - 14, 10, 12);
+    ctx.fillStyle = S.lights ? '#ff3030' : '#3a1010'; ctx.beginPath(); ctx.arc(x, y - 8, 3.5, 0, 7); ctx.fill();
+    if (S.lights) { ctx.shadowColor = '#f00'; ctx.shadowBlur = 10; ctx.fillStyle = '#ff3030'; ctx.beginPath(); ctx.arc(x, y - 8, 2.5, 0, 7); ctx.fill(); ctx.shadowBlur = 0; }
+  }
+}
+function drawFlashing() {
+  const warn = S.cmd && !S.lights, ph = Math.floor(S.t * 2) % 2;
+  for (const [x, y] of [[ROAD_X + 40, 205], [ROAD_X - 40, 205], [ROAD_X - 40, 315], [ROAD_X + 40, 315]]) {
+    ctx.fillStyle = '#4a4f56'; ctx.fillRect(x - 1.5, y - 2, 3, 20);
+    ctx.fillStyle = '#111'; ctx.fillRect(x - 12, y - 12, 24, 12); ctx.strokeStyle = '#eee'; ctx.lineWidth = 1.5; ctx.strokeRect(x - 12, y - 12, 24, 12);
+    for (const k of [0, 1]) {
+      const lit = warn ? ph === 0 : S.lights ? ph === k : false, col = warn ? '#ffb020' : '#ff3030', lx = x + (k ? 5 : -5);
+      ctx.fillStyle = lit ? col : '#2a1a1a'; ctx.beginPath(); ctx.arc(lx, y - 6, 3.6, 0, 7); ctx.fill();
+      if (lit) { ctx.shadowColor = col; ctx.shadowBlur = 10; ctx.beginPath(); ctx.arc(lx, y - 6, 2.5, 0, 7); ctx.fill(); ctx.shadowBlur = 0; }
+    }
+  }
+}
 const CROSSING = {
   lights() {
+    if (SC.crossing.style === 'footpath') return drawFootLights();
+    if (SC.crossing.style === 'aocl') return drawFlashing();
     // miniature warning lights facing each approach: red over green
     for (const [x, y] of [[ROAD_X + 38, 205], [ROAD_X - 38, 205], [ROAD_X - 38, 315], [ROAD_X + 38, 315]]) {
       ctx.fillStyle = '#4a4f56'; ctx.fillRect(x - 1.5, y - 2, 3, 22);
@@ -645,6 +735,7 @@ function drawTrains() {
 function drawCars() {
   const rot = -Math.atan(SC.crossing.skew || 0);
   for (const c of S.cars) {
+    if (c.ped) { ctx.fillStyle = css(c.col); ctx.beginPath(); ctx.arc(c.x, c.y, 4, 0, 7); ctx.fill(); ctx.fillStyle = '#f3d2b0'; ctx.beginPath(); ctx.arc(c.x, c.y - 1, 2.5, 0, 7); ctx.fill(); continue; }
     ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(rot);
     ctx.fillStyle = css(c.col); ctx.fillRect(-7, -11, 14, 22);
     ctx.fillStyle = '#0006'; ctx.fillRect(-5, -5 + (c.dy > 0 ? 3 : -3), 10, 7);
@@ -658,7 +749,7 @@ function render() {
   if (!S) return;
   drawBase(); SCENERY[SC.key].under(); drawTrains(); drawCars();
   for (const s of SC.signals) drawSignal(s);
-  CROSSING[SC.crossing.style || SC.crossing.type](); SCENERY[SC.key].over();
+  (CROSSING[SC.crossing.style] || CROSSING[SC.crossing.type])(); SCENERY[SC.key].over();
   text('← WEST', 10, 470, 12, '#e6e9ec99', 'left'); text('EAST →', W - 10, 470, 12, '#e6e9ec99', 'right');
   updatePanel();
   $('score').textContent = S.score; $('trains').textContent = S.trainsDone;
