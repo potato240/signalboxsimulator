@@ -14,7 +14,12 @@
   #hud .k { color:var(--dim); font-size:12px; text-transform:uppercase; letter-spacing:.05em; margin-right:4px; }
   #view { position:relative; width:100%; aspect-ratio:2/1; min-height:260px; background:#a9cfe8; border-left:1px solid var(--edge); border-right:1px solid var(--edge); cursor:grab; touch-action:none; }
   #view canvas { display:block; width:100%; height:100%; }
-  #view.boxview::after { content:''; position:absolute; inset:0; border:16px solid #2c1f16; box-shadow:inset 0 0 50px #000a; pointer-events:none; background:linear-gradient(#2c1f16,#2c1f16) 50% 0/10px 100% no-repeat; }
+  #modes { margin-left:auto; display:flex; gap:4px; } #modes button { padding:4px 10px; } #modes button.on { background:#2a5a3a; border-color:var(--green); }
+  #toast { position:absolute; top:10px; left:50%; transform:translateX(-50%); background:#000b; color:var(--amber); padding:6px 14px; border-radius:6px; opacity:0; transition:opacity .25s; pointer-events:none; max-width:90%; text-align:center; z-index:2; }
+  #toast.on { opacity:1; }
+  #hint { position:absolute; bottom:10px; left:50%; transform:translateX(-50%); background:#000a; color:var(--text); padding:5px 12px; border-radius:6px; pointer-events:none; font-size:13px; max-width:92%; text-align:center; z-index:2; }
+  #hint:empty { display:none; }
+  #xhair { display:none; position:absolute; left:50%; top:50%; width:8px; height:8px; margin:-4px; border-radius:50%; background:#fff9; pointer-events:none; z-index:2; } #xhair.on { background:var(--green); transform:scale(1.6); }
   #msg { padding:8px 12px; background:#10151a; border:1px solid var(--edge); min-height:36px; color:var(--amber); }
   #panel { display:grid; grid-template-columns:1fr 1.2fr 1fr; gap:10px; padding:12px; background:var(--panel); border:1px solid var(--edge); border-top:0; border-radius:0 0 8px 8px; }
   @media (max-width:760px){ #panel { grid-template-columns:1fr; } }
@@ -55,9 +60,9 @@
     <span><span class="k">Train delay</span><b id="tdelay">0s</b></span>
     <span><span class="k">Road complaints</span><b id="comp">0</b></span>
     <span><span class="k">Shift</span><b id="clock">00:00</b></span>
-    <button id="vbtn" style="margin-left:auto;padding:4px 10px">View: Signal box</button>
+    <span id="modes"><button data-m="box">Window</button><button data-m="walk">Walk</button><button data-m="over">Overview</button></span>
   </div>
-  <div id="view"></div>
+  <div id="view"><div id="toast"></div><div id="hint"></div><div id="xhair"></div></div>
   <div id="msg">Welcome to Bailey Crossing.</div>
   <div id="panel">
     <div class="box">
@@ -93,7 +98,7 @@
     <li>Gates fully closed? Pull that train's <b>signal lever</b> to clear it.</li>
     <li>After the train has passed, <b>restore the lever</b>, then open the gates for the road.</li>
   </ol>
-  <p style="color:var(--dim)">Drag to look out of the window, press <b>V</b> to switch to an overview. Wheel: hold &larr;/&rarr;. Levers: keys 1 and 2.</p>
+  <p style="color:var(--dim)">Three views (key <b>V</b> cycles): <b>Window</b> (drag to look, use the panel below), <b>Walk</b> (WASD around the box, click the levers, block instruments and gate wheel: left mouse closes, right mouse opens), <b>Overview</b>. Panel shortcuts: &larr;/&rarr; wheel, keys 1 and 2 levers.</p>
   <p style="color:var(--dim)">Interlocking: signals can't clear until the gates are closed. Gates can't open while a signal is off or a train is committed to the crossing.</p>
   <button class="go" id="start">Start shift</button>
 </div></div>
@@ -142,7 +147,11 @@ function bell(n = 3) { for (let i = 0; i < n; i++) ding(1100, i * .28, .3); }
 function rumble() { ding(90, 0, .6); }
 
 // ---- messages -----------------------------------------------------------
-function say(text, secs = 6) { $('msg').textContent = text; S.msgTimer = secs; }
+let toastT;
+function say(text, secs = 6) {
+  $('msg').textContent = text; S.msgTimer = secs;
+  const t = $('toast'); t.textContent = text; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), Math.min(secs, 4) * 1000);
+}
 
 // ---- derived helpers ----------------------------------------------------
 const gateClosed = () => S.gate >= 0.999;
@@ -190,14 +199,14 @@ function bindHold(id, key) {
 }
 bindHold('bOpen', 'open'); bindHold('bClose', 'close');
 addEventListener('keydown', e => {
-  if (e.key === 'ArrowLeft' || e.key === 'a') held.open = true;
-  if (e.key === 'ArrowRight' || e.key === 'd') held.close = true;
+  if (e.key === 'ArrowLeft') held.open = true;
+  if (e.key === 'ArrowRight') held.close = true;
   if (e.key === '1') toggleLever(1);
   if (e.key === '2') toggleLever(-1);
 });
 addEventListener('keyup', e => {
-  if (e.key === 'ArrowLeft' || e.key === 'a') held.open = false;
-  if (e.key === 'ArrowRight' || e.key === 'd') held.close = false;
+  if (e.key === 'ArrowLeft') held.open = false;
+  if (e.key === 'ArrowRight') held.close = false;
 });
 
 // ---- simulation ---------------------------------------------------------
@@ -358,13 +367,79 @@ for (let x = -250; x <= 250; x += 25) if (Math.abs(x) > 8) { box(.15, 6, .15, 0x
   }
 }
 
-// signal box (hidden when looking out of it)
+// signal box: a hollow room on a brick base, open windows facing the crossing
+const floorY = 3.2, WH = 2.6;
 const sbox = new THREE.Group(); sbox.position.set(X3(595), 0, Z3(170)); scene.add(sbox);
-box(7, 3, 5, 0x8a4f37, 0, 1.5, 0, sbox);
-box(7.8, .3, 5.8, 0xe8e2d0, 0, 3.15, 0, sbox);
-box(7, 2.6, 5, 0xe8e2d0, 0, 4.6, 0, sbox);
-for (let i = -2; i <= 2; i++) box(1, 1.1, .1, 0x9fd3e8, i * 1.3, 4.7, 2.55, sbox, false);
-box(8.2, .4, 6.2, 0x4d4d55, 0, 6.1, 0, sbox);
+const interactives = [];
+const hitMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+function hitbox(geo, x, y, z, parent, data, rot) {
+  const m = new THREE.Mesh(geo, hitMat); m.position.set(x, y, z); if (rot) m.rotation.set(rot[0], rot[1], rot[2]);
+  m.userData = data; parent.add(m); interactives.push(m); return m;
+}
+function label(lines, w, h, fg = '#f2e6c0', bg = '#1d1a16') {
+  const c = document.createElement('canvas'); c.width = 256; c.height = Math.round(256 * h / w);
+  const g = c.getContext('2d'); g.fillStyle = bg; g.fillRect(0, 0, c.width, c.height); g.fillStyle = fg; g.textAlign = 'center'; g.textBaseline = 'middle';
+  lines.forEach((t, i) => { g.font = 'bold ' + Math.floor(c.height / (lines.length + .7)) + 'px sans-serif'; g.fillText(t, c.width / 2, c.height * (i + .5) / lines.length); });
+  return new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c) }));
+}
+{
+  const wall = 0xe8e2d0, wood = 0x6a4a35, wy = floorY + WH / 2;
+  box(7.8, 3, 5.8, 0x8a4f37, 0, 1.5, 0, sbox);                         // brick base
+  box(7.6, .2, 5.6, 0x8a6a45, 0, floorY - .1, 0, sbox, false);          // floor
+  box(7.8, WH, .2, wall, 0, wy, -2.6, sbox);                            // back wall
+  box(.2, WH, 5.8, wall, 3.6, wy, 0, sbox);                             // east wall
+  box(.2, 1, 5.8, wood, -3.6, floorY + .5, 0, sbox); box(.2, .6, 5.8, wall, -3.6, floorY + 2.3, 0, sbox);   // west windows
+  for (const z of [-2.6, -1.3, 0, 1.3, 2.6]) box(.2, 1, .14, wall, -3.6, floorY + 1.5, z, sbox);
+  box(7.8, 1, .2, wood, 0, floorY + .5, 2.6, sbox); box(7.8, .6, .2, wall, 0, floorY + 2.3, 2.6, sbox);      // south windows
+  for (const x of [-3.6, -1.2, 1.2]) box(.14, 1, .2, wall, x, floorY + 1.5, 2.6, sbox);
+  var roof = box(8.6, .3, 6.6, 0x4d4d55, 0, floorY + WH + .15, 0, sbox);
+  const pl = new THREE.PointLight(0xffe2b0, .8, 14); pl.position.set(0, floorY + 2.2, 0); sbox.add(pl);
+  box(1.2, .06, .6, 0x5b3a22, -2.7, floorY + .9, -1.2, sbox); box(.08, .9, .08, 0x5b3a22, -2.7, floorY + .45, -1.2, sbox);   // little desk
+}
+// lever frame on the back wall: 1 and 2 are the signals, the rest are spare
+const levers = [];
+box(3.4, .3, .6, 0x2b2b30, 0, floorY + .15, -2.2, sbox);
+for (let i = 0; i < 6; i++) {
+  const x = -1.25 + i * .5, dir = i === 0 ? 1 : i === 1 ? -1 : 0;
+  const pivot = new THREE.Group(); pivot.position.set(x, floorY + .3, -2.15); sbox.add(pivot);
+  box(.07, 1.3, .07, 0x8d9399, 0, .65, 0, pivot); box(.11, .36, .15, dir ? 0xd22a22 : 0x222222, 0, 1.4, 0, pivot);
+  hitbox(new THREE.BoxGeometry(.4, 1.7, .5), 0, .8, 0, pivot, dir ? { act: 'lever', dir } : { act: 'spare' });
+  levers.push({ pivot, dir });
+  const plate = label(dir ? [String(i + 1), dir > 0 ? 'W SIG' : 'E SIG'] : [String(i + 1), 'SPARE'], .42, .3); plate.position.set(x, floorY + 1.9, -2.49); sbox.add(plate);
+}
+// gate wheel by the south window
+const wheel = new THREE.Group(); wheel.position.set(2.6, floorY + 1.25, 1.6); sbox.add(wheel);
+box(.22, 1.1, .22, 0x555a60, 2.6, floorY + .55, 1.6, sbox);
+{
+  const brass = new THREE.MeshLambertMaterial({ color: 0xc9a15a });
+  wheel.add(new THREE.Mesh(new THREE.TorusGeometry(.38, .035, 8, 28), brass));
+  wheel.add(new THREE.Mesh(new THREE.CylinderGeometry(.07, .07, .12, 10), brass).rotateX(Math.PI / 2));
+  for (let i = 0; i < 4; i++) { const sp = new THREE.Mesh(new THREE.BoxGeometry(.76, .05, .05), brass); sp.rotation.z = i * Math.PI / 4; wheel.add(sp); }
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(.06, 8, 6), mat(0x222222)); knob.position.set(.38, 0, .06); wheel.add(knob);
+  hitbox(new THREE.CylinderGeometry(.46, .46, .2, 16), 0, 0, 0, wheel, { act: 'wheel' }, [Math.PI / 2, 0, 0]);
+  const plate = label(['GATE', 'WHEEL'], .5, .3); plate.position.set(2.6, floorY + .75, 1.49); plate.rotation.y = Math.PI; sbox.add(plate);
+}
+// block instruments on the east wall
+const insts = {};
+function makeInst(dir, z, title) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 320; const tex = new THREE.CanvasTexture(c);
+  const body = box(.28, .9, .7, 0x5b3a22, 3.35, floorY + 1.45, z, sbox); body.userData = { act: 'inst', dir }; interactives.push(body);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(.62, .78), new THREE.MeshBasicMaterial({ map: tex }));
+  face.position.set(3.35 - .146, floorY + 1.45, z); face.rotation.y = -Math.PI / 2; sbox.add(face);
+  insts[dir] = { c, tex, title, last: '' };
+}
+makeInst(1, -.9, 'WEST BOX'); makeInst(-1, .9, 'EAST BOX');
+function drawInst(dir, now) {
+  const I = insts[dir], st = S.inst[dir], blink = st === 'offered' ? Math.floor(now * 2.5) % 2 : 0, key = st + blink;
+  if (I.last === key) return; I.last = key;
+  const g = I.c.getContext('2d'); g.fillStyle = '#1b1712'; g.fillRect(0, 0, 256, 320);
+  g.fillStyle = '#f2e6c0'; g.textAlign = 'center'; g.font = 'bold 34px sans-serif'; g.fillText(I.title, 128, 50);
+  g.fillStyle = st === 'accepted' ? '#2ecc71' : st === 'offered' ? (blink ? '#ffb020' : '#5a4010') : '#c0392b';
+  g.beginPath(); g.arc(128, 150, 62, 0, 7); g.fill();
+  g.fillStyle = '#f2e6c0'; g.font = 'bold 28px sans-serif';
+  g.fillText(st === 'accepted' ? 'LINE CLEAR' : st === 'offered' ? 'TRAIN OFFERED' : 'LINE BLOCKED', 128, 262);
+  I.tex.needsUpdate = true;
+}
 
 // signals
 const sigLamps = {};
@@ -413,28 +488,71 @@ function makeCar(c) {
   scene.add(g); return g;
 }
 
-// cameras: out of the signal box window, or a high overview
-let camMode = 'box';
-const BOX_POS = new THREE.Vector3(X3(595) - 1.5, 4.9, Z3(170) + 1.2), LOOK_AT = new THREE.Vector3(0, 1.2, 0);
-const look = { yaw: 0, pitch: 0 }; let yaw0 = 0, pitch0 = 0;
-{ const d = LOOK_AT.clone().sub(BOX_POS); yaw0 = Math.atan2(-d.x, -d.z); pitch0 = Math.atan2(d.y, Math.hypot(d.x, d.z)); }
+// views: Window (seated, drag to look), Walk (WASD around the box, click things), Overview
+let camMode = 'box', locked = false;
+const LOOK_AT = new THREE.Vector3(0, 1.2, 0), SEAT = new THREE.Vector3(-1.8, floorY + 1.65, 1.0);
+const modeLook = { box: { yaw: 0, pitch: 0 }, walk: { yaw: 0, pitch: 0 } }, walk = { x: 0, z: .5 };
+let yaw0 = 0;
+{ const d = LOOK_AT.clone().sub(sbox.position.clone().add(SEAT)); yaw0 = Math.atan2(-d.x, -d.z); const p0 = Math.atan2(d.y, Math.hypot(d.x, d.z));
+  modeLook.box = { yaw: yaw0, pitch: p0 }; modeLook.walk = { yaw: yaw0, pitch: p0 * .3 }; }
+const MODES = ['box', 'walk', 'over'], keys = {};
 function setView(m) {
-  camMode = m; sbox.visible = m !== 'box'; view.classList.toggle('boxview', m === 'box');
-  $('vbtn').textContent = 'View: ' + (m === 'box' ? 'Signal box' : 'Overview');
+  camMode = m; roof.visible = m !== 'over';
+  document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
+  $('xhair').style.display = m === 'walk' ? 'block' : 'none';
+  if (m !== 'walk' && document.pointerLockElement) document.exitPointerLock();
   if (m === 'over') { camera.position.set(24, 17, 28); camera.rotation.set(0, 0, 0); camera.lookAt(0, 0, 0); }
+  $('hint').textContent = m === 'walk' ? 'Click to look around · WASD to walk · click levers, instruments and the wheel' : '';
 }
-$('vbtn').onclick = () => setView(camMode === 'box' ? 'over' : 'box');
-addEventListener('keydown', e => { if (e.key === 'v' || e.key === 'V') $('vbtn').click(); });
+document.querySelectorAll('#modes button').forEach(b => b.onclick = () => setView(b.dataset.m));
+addEventListener('keydown', e => {
+  if (e.key === 'v' || e.key === 'V') setView(MODES[(MODES.indexOf(camMode) + 1) % 3]);
+  keys[e.key.toLowerCase()] = true;
+});
+addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+view.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('pointerlockchange', () => { locked = document.pointerLockElement === renderer.domElement; });
+
+const ray = new THREE.Raycaster(); ray.far = 4.8;
+const ndc = new THREE.Vector2(0, 0); let dragLook = false;
+function aimed() {
+  ray.setFromCamera(locked ? new THREE.Vector2(0, 0) : ndc, camera);
+  const h = ray.intersectObjects(interactives, false)[0]; return h ? h.object.userData : null;
+}
+function hintFor(u) {
+  if (!u) return camMode === 'walk' && !locked ? 'Click to look around · WASD to walk · Esc frees the mouse' : '';
+  if (u.act === 'lever') return `Lever ${u.dir > 0 ? 1 : 2} (${u.dir > 0 ? 'West' : 'East'} signal): click to ${S.sigOff[u.dir] ? 'restore' : 'pull'}`;
+  if (u.act === 'spare') return 'Spare lever';
+  if (u.act === 'inst') return S.inst[u.dir] === 'offered' ? `${u.dir > 0 ? 'West' : 'East'} instrument: click to accept the train` : `${u.dir > 0 ? 'West' : 'East'} block instrument`;
+  return 'Gate wheel: hold left mouse to close, right mouse to open';
+}
+function setNdc(e) { const r = view.getBoundingClientRect(); ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); }
+view.addEventListener('pointerdown', e => {
+  setNdc(e);
+  if (camMode === 'over') return;
+  if (camMode === 'walk' && !locked) { try { renderer.domElement.requestPointerLock(); } catch (_) {} }
+  const u = camMode === 'walk' ? aimed() : null;
+  if (!u) { dragLook = true; return; }
+  if (!S.running) return;
+  if (u.act === 'lever') toggleLever(u.dir);
+  else if (u.act === 'spare') say('Spare lever — not in use.', 3);
+  else if (u.act === 'inst') { if (S.inst[u.dir] === 'offered') accept(u.dir); else say('Nothing offered on that instrument.', 3); }
+  else if (u.act === 'wheel') { held.close = e.button === 0; held.open = e.button === 2; }
+});
+addEventListener('pointerup', () => { dragLook = false; });
 view.addEventListener('pointermove', e => {
-  if (!(e.buttons & 1) || camMode !== 'box') return;
-  look.yaw = Math.max(-1.1, Math.min(1.1, look.yaw + e.movementX * .004));
-  look.pitch = Math.max(-.5, Math.min(.35, look.pitch - e.movementY * .004));
+  setNdc(e);
+  if (camMode === 'over' || !(locked || dragLook)) return;
+  const L = modeLook[camMode], s = locked ? -1 : 1;      // mouse-look turns with the mouse; dragging grabs the scene
+  L.yaw += s * e.movementX * .0035; L.pitch += s * e.movementY * .0035;
 });
 function resize() { const w = view.clientWidth, h = view.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
 new ResizeObserver(resize).observe(view); resize();
 setView('box');
 
+let last3d = performance.now();
 function sync3D() {
+  const tNow = performance.now(), dt = Math.min(.05, (tNow - last3d) / 1000); last3d = tNow;
   const now = S.t;
   // signals
   for (const d of [1, -1]) { const off = S.sigOff[d]; sigLamps[d].red.material.color.set(off ? 0x3a1010 : 0xff3030); sigLamps[d].grn.material.color.set(off ? 0x30ff70 : 0x103a1c); }
@@ -453,10 +571,29 @@ function sync3D() {
     m.position.set(X3(c.x), 0, Z3(c.y)); m.userData.haz.visible = c.stall > 0 && Math.floor(now * 3) % 2 === 0;
   }
   for (const [c, m] of carMeshes) if (!S.cars.includes(c)) { scene.remove(m); carMeshes.delete(c); }
+  // inside the box: levers, wheel, instruments
+  for (const l of levers) { const target = l.dir && S.sigOff[l.dir] ? .65 : -.15; l.pivot.rotation.x += (target - l.pivot.rotation.x) * Math.min(1, dt * 10); }
+  wheel.rotation.z = -S.gate * Math.PI * 6;
+  drawInst(1, now); drawInst(-1, now);
   // camera
-  if (camMode === 'box') {
-    camera.position.copy(BOX_POS); camera.position.y += Math.sin(now * .7) * .01;
-    camera.rotation.set(pitch0 + look.pitch, yaw0 + look.yaw, 0);
+  if (camMode !== 'over') {
+    const L = modeLook[camMode];
+    if (camMode === 'box') { L.yaw = Math.max(yaw0 - 1.3, Math.min(yaw0 + 1.3, L.yaw)); L.pitch = Math.max(-.6, Math.min(.35, L.pitch)); }
+    else {
+      L.pitch = Math.max(-1.3, Math.min(1.3, L.pitch));
+      const f = (keys.w ? 1 : 0) - (keys.s ? 1 : 0), rr = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+      if (f || rr) {
+        const sp = 2.6 * dt, fx = -Math.sin(L.yaw), fz = -Math.cos(L.yaw), rx = Math.cos(L.yaw), rz = -Math.sin(L.yaw);
+        walk.x += (fx * f + rx * rr) * sp; walk.z += (fz * f + rz * rr) * sp;
+        walk.x = Math.max(-3.1, Math.min(3.0, walk.x)); walk.z = Math.max(-1.1, Math.min(2.2, walk.z));
+        const dx = walk.x - 2.6, dz = walk.z - 1.6, dd = Math.hypot(dx, dz);     // keep out of the wheel pillar
+        if (dd < .55) { walk.x = 2.6 + dx / dd * .55; walk.z = 1.6 + dz / dd * .55; }
+      }
+      const u = aimed(); $('hint').textContent = hintFor(u); $('xhair').classList.toggle('on', !!u);
+    }
+    const p = camMode === 'box' ? SEAT : new THREE.Vector3(walk.x, floorY + 1.65, walk.z);
+    camera.position.copy(sbox.position).add(p);
+    camera.rotation.set(L.pitch, L.yaw, 0);
   }
   renderer.render(scene, camera);
 }
