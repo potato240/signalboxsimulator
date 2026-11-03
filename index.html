@@ -123,7 +123,7 @@ const SCENARIOS = {
   },
   otla: {
     title: 'Otla', trainLen: 140, offerGap: [50, 90], carGap: [8, 18],
-    crossing: { type: 'hand', zone: [212, 308], stopN: 330, stopS: 190 },
+    crossing: { type: 'hand', zone: [236, 284], stopN: 300, stopS: 220 },
     signals: [
       { id: 'W', name: 'West signal', desc: 'eastbound', dir: 1, group: 'T', ty: 260, x: 380, y: 236 },
       { id: 'E', name: 'East signal', desc: 'westbound', dir: -1, group: 'T', ty: 260, x: 620, y: 284 }
@@ -504,8 +504,8 @@ const CROSSING = {
     if (g > .02 && g < .999) { ctx.fillStyle = Math.floor(S.t * 3) % 2 ? '#ffb020' : '#553'; for (const [x, y] of [[ROAD_X + 40, 195], [ROAD_X - 40, 325]]) { ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fill(); } }
   },
   hand() {
-    // four hand-swung leaves; open they lie along the road verge, shut they span their half of the road
-    for (const [side, py, openUp] of [['n', 217, true], ['s', 303, false]]) {
+    // four hand-swung leaves beside the line: swung shut they span the road, open they lie across the rails
+    for (const [side, py, openUp] of [['n', 241, false], ['s', 279, true]]) {
       const g = S.gates[side], k = Math.PI / 2 * (1 - g);
       armBar(ROAD_X - 33, py, openUp ? -k : k, 32);
       armBar(ROAD_X + 33, py, openUp ? Math.PI + k : Math.PI - k, 32);
