@@ -83,7 +83,7 @@
   <div class="picks">
     <button class="pick" data-box="bailey"><b>Bailey Crossing</b><span>Quiet single line. Wheel-operated gates and two protecting signals. A gentle start.</span></button>
     <button class="pick" data-box="otla"><b>Otla</b><span>Quiet single line with hand-swung gates and no road lights. The signalman has to walk out to swing them.</span></button>
-    <button class="pick" data-box="barkleybridge"><b>Barkley Bridge</b><span>A lifting bridge carries the railway and a road over a river. Lift it for boats once the road and railway are stopped. No scoring.</span></button>
+    <button class="pick" data-box="barkleybridge"><b>Barkley Bridge</b><span>A lifting bridge carries the railway and a road over a river, with a silent wig-wag foot crossing for the signaller by the box stairs. Trains arrive by themselves; lift it for boats. No scoring.</span></button>
     <button class="pick" data-box="warthamhighway"><b>Wartham Highway</b><span>A single track across a busy four-lane road, with wig-wags facing each approach. Fast traffic, two lanes each way.</span></button>
     <button class="pick" data-box="barkleystation"><b>Barkley Station</b><span>A town crossing with wig-wags and a side road joining beside it. Two tracks, both calling at an island platform.</span></button>
     <button class="pick" data-box="highbarkley"><b>High Barkley</b><span>Two-track line in hill country. A wig-wag crossing, no gates, and the road meets the line at a sharp angle.</span></button>
@@ -250,12 +250,12 @@ const SCENARIOS = {
     ]
   },
   barkleybridge: {
-    title: 'Barkley Bridge', trainLen: 140, offerGap: [50, 90], carGap: [6, 12], noScore: true,
+    title: 'Barkley Bridge', trainLen: 140, offerGap: [45, 80], carGap: [6, 12], noScore: true, autoTrains: true,
     // a river runs north-south under a double-leaf lifting bridge that carries a single railway and a road side by side; boats ask for it to be lifted
-    crossing: { type: 'bridge', noRoad: true, clearance: 78, zone: [0, 0] },
+    crossing: { type: 'bridge', noRoad: true, clearance: { 1: 285, '-1': 70 }, zone: [0, 0], footX: 760, wigs: [[782, 200, Math.PI]], bellVol: 0 },
     signals: [
       { id: 'W', name: 'West signal', desc: 'eastbound', dir: 1, group: 'T', ty: 235, x: 340, y: 214 },
-      { id: 'E', name: 'East signal', desc: 'westbound', dir: -1, group: 'T', ty: 235, x: 660, y: 254 }
+      { id: 'E', name: 'East signal', desc: 'westbound', dir: -1, group: 'T', ty: 235, x: 830, y: 254 }
     ]
   }
 };
@@ -278,7 +278,8 @@ const carsInZone = () => isBridge() ? S.cars.filter(c => c.x > 435 && c.x < 565)
 const gateClosed = () => isBridge() ? S.lift <= 0.001 : S.gate >= 0.999;
 const trainRear = tr => tr.x - tr.dir * SC.trainLen;
 const sigDist = tr => (tr.sig.x - tr.x) * tr.dir;                       // >0: signal still ahead
-const rearClear = tr => (trainRear(tr) - (ROAD_X + tr.dir * (SC.crossing.clearance || 40))) * tr.dir > 0;
+const clearOf = tr => { const c = SC.crossing.clearance; return typeof c === 'object' ? c[tr.dir] : (c || 40); };     // how far past the middle a train's tail must be (a number, or one per direction)
+const rearClear = tr => (trainRear(tr) - (ROAD_X + tr.dir * clearOf(tr))) * tr.dir > 0;
 const approachLocked = () => S.trains.some(tr => (sigDist(tr) < -1 || tr.committed) && !rearClear(tr));
 const anySigOff = () => SC.signals.some(s => S.sigOff[s.id]);
 const roadOpen = () => SC.crossing.type === 'wheel' ? S.gate <= 0.12 : SC.crossing.type === 'hand' ? Math.max(S.gates.n, S.gates.s) <= 0.12 : !S.lights;
@@ -314,6 +315,7 @@ function toggleLever(id) {
   let why = '';
   if (SC.signals.some(o => o !== sig && o.group === sig.group && S.sigOff[o.id])) why = 'Opposing signal is off';
   else if (!gateClosed()) why = isBridge() ? 'Locked: the bridge is not down' : SC.crossing.type === 'lights' ? 'Locked: road lights not red yet' : SC.crossing.type === 'barrier' || SC.crossing.barriers ? 'Locked: barriers not down' : 'Locked: gates not closed';
+  else if (isBridge() && S.gate < .999) why = 'Locked: the barriers are not down (they are paired with the signals)';
   else if (!isBridge() && carsInZone().length) why = 'Locked: vehicle on the crossing';
   else if (S.inst[id] !== 'accepted') why = 'No train accepted on that line';
   if (why) { lk.textContent = why; say(why + '.'); el.classList.add('shake'); setTimeout(() => el.classList.remove('shake'), 320); return; }
@@ -390,16 +392,26 @@ function bridgeCmd(cmd) {
     S.cmd = 'lower'; if (!S.lights) { S.lights = true; S.lightT = 0; } else S.lightT = Math.max(S.lightT, 3); say('Road lights on, barriers lowering.', 3);
   } else if (cmd === 'open') {
     if (S.lift > .001 || S.liftCmd) say('Locked: the bridge is lifted.');
+    else if (anySigOff()) say('Locked: a signal is off (the signals are paired with the barriers).');
+    else if (approachLocked()) say('Locked: a train is on the crossing.');
     else if (S.lights) { S.cmd = 'raise'; say('Barriers rising.', 3); }
   } else if (cmd === 'lift') {
-    const why = S.lift >= 1 ? 'The bridge is already up.' : S.gate < .999 ? 'Locked: close the road barriers first.' : anySigOff() ? 'Locked: a signal is off.' : approachLocked() ? 'Locked: a train is on or about to enter the bridge.' : carsInZone().length ? 'Locked: a vehicle is on the bridge.' : '';
+    const why = S.lift >= 1 ? 'The bridge is already up.' : S.gate < .999 ? 'Locked: close the road barriers first.' : anySigOff() ? 'Locked: a signal is off.' : approachLocked() ? 'Locked: a train is on or about to enter the bridge.' : carsInZone().length ? 'Locked: a vehicle is on the bridge.' : S.playerOnSpan ? 'Locked: someone is standing on the bridge.' : '';
     if (why) say(why); else { S.liftCmd = 'up'; say('Lifting the bridge.', 3); }
   } else if (cmd === 'lower') {
     if (S.lift <= 0) return;
     if (boatInChannel()) say('Locked: a boat is under the bridge.'); else { S.liftCmd = 'down'; say('Lowering the bridge.', 3); }
   }
 }
+function stepWigWag(dt) {       // the swing starts small, grows over about four swings, eases down when stopped; one clang at each end of a swing
+  S.wigAmp = S.lights ? Math.min(1, (S.wigAmp || 0) + dt / 5) : Math.max(0, (S.wigAmp || 0) - dt / 1.5);
+  if (S.lights || S.wigAmp > 0) {
+    const before = Math.floor((S.wigPhase || 0) / Math.PI); S.wigPhase = (S.wigPhase || 0) + dt * 2 * Math.PI * .8;
+    if (S.lights && (SC.crossing.bellVol ?? 1) > 0 && Math.floor(S.wigPhase / Math.PI) !== before) bellStrike((.1 + .08 * S.wigAmp) * (SC.crossing.bellVol ?? 1), before % 2 ? 840 : 900);      // bellVol 0: this wig-wag has no bell
+  } else S.wigPhase = 0;
+}
 function updateBridge(dt) {
+  stepWigWag(dt);
   if (S.cmd === 'lower') { S.lights = true; S.lightT += dt; if (S.lightT >= 3) { S.gate = Math.min(1, S.gate + dt / 6); if (S.gate >= 1) S.cmd = null; } }
   else if (S.cmd === 'raise') { S.gate = Math.max(0, S.gate - dt / 5); if (S.gate <= 0) { S.cmd = null; S.lights = false; S.lightT = 0; } }
   if (S.lights && S.gate < .999) { S.beepT -= dt; if (S.beepT <= 0) { ding(1500, 0, .07, .12); S.beepT = .4; } }
@@ -604,7 +616,8 @@ function updateOffers(dt) {
   if (!free.length) { S.offerTimer = 2; return; }
   const sig = free[Math.floor(Math.random() * free.length)];
   S.inst[sig.id] = 'offered'; S.bellTimer = 0; S.offerTimer = rand(SC.offerGap);
-  say(`Bell: ${sig.name} train offered.`, 6);
+  if (SC.autoTrains) { accept(sig.id); say(`A train is approaching: ${sig.name}.`, 5); }      // trains spawn in by themselves here: no bell, no block instrument to answer
+  else say(`Bell: ${sig.name} train offered.`, 6);
 }
 
 const fmt = n => { n = Math.floor(n); return String(Math.floor(n / 60)).padStart(2, '0') + ':' + String(n % 60).padStart(2, '0'); };
@@ -633,7 +646,7 @@ function buildPanel() {
     <div class="row"><button id="bBarClose">Close road barriers</button><button id="bBarOpen">Open road barriers</button></div>
     <div class="row"><button id="bBrUp">Lift bridge</button><button id="bBrDown">Lower bridge</button></div>
     <div class="gbar"><i id="gfill"></i></div><div class="lock" id="lkG"></div>
-    <div class="lock">To lift: signals at danger, no train on the bridge, road barriers down, bridge clear. Boats wait until it is fully up. Keys: &rarr; / &larr; barriers, Shift + &rarr; / &larr; lift / lower. No scoring here.</div></div>`;
+    <div class="lock">Trains arrive by themselves. The signals are paired with the road barriers: signals only clear with the barriers down and the bridge down. A single silent wig-wag (no bell) guards the signaller's foot crossing by the foot of the box stairs and swings whenever the barriers are lowered. To lift: signals at danger, no train on the bridge, barriers down, bridge clear; boats wait until it is fully up. Keys: &rarr; / &larr; barriers, Shift + &rarr; / &larr; lift / lower. No scoring here.</div></div>`;
   else if (X.type === 'lights') h += `<div class="box ctl"><h3>${ui().title}</h3>
     <div class="lamps"><span class="lamp on" id="lampRoad">${ui().lampOff}</span></div>
     <div class="row"><button id="bRed">${ui().red}</button><button id="bGreen">${ui().green}</button></div>
@@ -923,6 +936,9 @@ const SCENERY = {
         ctx.fillStyle = b.col; ctx.beginPath(); ctx.moveTo(0, -30); ctx.quadraticCurveTo(14, -12, 12, 26); ctx.lineTo(-12, 26); ctx.quadraticCurveTo(-14, -12, 0, -30); ctx.fill();
         ctx.fillStyle = '#2f4a6a'; ctx.fillRect(-7, -2, 14, 16); ctx.fillStyle = '#9fd3e8'; ctx.fillRect(-5, 0, 10, 4); ctx.restore();
       }
+      const fx = SC.crossing.footX;                                                                           // the signaller's footpath over the line, by the foot of the box stairs
+      ctx.fillStyle = '#b5a98a'; ctx.fillRect(fx - 8, 154, 16, 119);
+      ctx.fillStyle = '#7a6a55'; ctx.fillRect(fx - 8, 221, 16, 28); ctx.fillStyle = '#9aa0a6'; ctx.fillRect(fx - 8, 228, 16, 2.5); ctx.fillRect(fx - 8, 240, 16, 2.5);
       ctx.fillStyle = '#6d7a86'; for (const y of [201, 331]) { ctx.fillRect(424, y, 18, 8); ctx.fillRect(558, y, 18, 8); }   // towers at the corners
       const w = 60 * Math.cos(ang);                                                                           // each leaf looks narrower from above as it tilts
       for (const s of [-1, 1]) {
@@ -937,6 +953,8 @@ const SCENERY = {
       for (let i = 0; i < 5; i++) house(40 + i * 70, 40 + (i % 2) * 6, 62, 70, cols[i % 5]);                      // quayside warehouses and houses
       for (let i = 0; i < 4; i++) house(40 + i * 80, 380 + (i % 2) * 8, 66, 66, cols[(i + 2) % 5]);
       for (let i = 0; i < 4; i++) house(600 + i * 90, 380 + (i % 2) * 8, 70, 66, cols[(i + 1) % 5]);
+      ctx.fillStyle = '#8a8f95'; ctx.fillRect(676, 154, 76, 18); ctx.fillStyle = '#6a7076'; for (let x = 684; x < 752; x += 8) ctx.fillRect(x, 154, 1.5, 18);     // the box's stairs, coming down on the east side
+      ctx.strokeStyle = '#9aa0a6'; ctx.lineWidth = 1.5; ctx.strokeRect(676, 154, 76, 18);
       signalBox(600, 130, 74, 46, 'BARKLEY BRIDGE');
     },
     over() {}
@@ -1019,6 +1037,7 @@ const CROSSING = {
   bridge() {
     // road barriers at each end of the bridge (they swing out across the road) with flashing red lamps
     const g = S.gate, len = 6 + 50 * g, ph = Math.floor(S.t * 2) % 2;
+    // (the foot-crossing wig-wag is drawn in 3D only)
     for (const x of [412, 588]) {
       ctx.fillStyle = '#eee'; ctx.fillRect(x - 3, 268, 6, len);
       ctx.fillStyle = '#d32'; for (let i = 0; i < len; i += 10) ctx.fillRect(x - 3, 268 + i, 6, Math.min(5, len - i));

@@ -309,17 +309,18 @@ function consoleControl(sbox, floorY, sx, sz, px, pz, labels, hints) {
 // ---- Barkley Bridge: river, lifting leaves, boats, road barriers -------------------------------------------------------------
 function buildBridgeWorld() {
   th = 0;
-  const g = new THREE.Mesh(new THREE.PlaneGeometry(800, 800), mat(0x426f36)); g.rotation.x = -Math.PI / 2; g.receiveShadow = true; scene.add(g);
-  box(12, .04, 800, 0x2a6aa0, 0, .03, 0, scene, false);                                              // the river, running north-south
-  for (const s of [-1, 1]) box(.7, .6, 800, 0x8a8478, s * 6.35, .3, 0, scene, false);               // stone banks
+  for (const s of [-1, 1]) { const g = new THREE.Mesh(new THREE.PlaneGeometry(400, 800), mat(0x426f36)); g.rotation.x = -Math.PI / 2; g.position.x = s * (6.6 + 200); g.receiveShadow = true; scene.add(g); }   // ground either side of the channel
+  box(12.6, .2, 800, 0x5a5348, 0, -.95, 0, scene, false);                                           // river bed
+  box(12, .04, 800, 0x2a6aa0, 0, -.45, 0, scene, false);                                            // the river, running north-south, well below the bridge
+  for (const s of [-1, 1]) box(.7, 1, 800, 0x8a8478, s * 6.35, -.45, 0, scene, false);             // stone banks, flush with the ground
   const zT = Z3(235);
   for (const s of [-1, 1]) {
-    box(274, .2, 3, 0x7a746a, s * (6.7 + 137), .1, zT, scene, false);                                    // railway either side of the river
+    box(274, .2, 3, 0x7a746a, s * (6.05 + 137), .1, zT, scene, false);                                    // railway either side of the river
     const sl = new THREE.InstancedMesh(new THREE.BoxGeometry(.3, .12, 2.4), mat(0x4b3a2a), 340), m = new THREE.Matrix4();
-    for (let i = 0; i < 340; i++) { m.setPosition(s * (7 + i * .8), .26, zT); sl.setMatrixAt(i, m); }
+    for (let i = 0; i < 340; i++) { m.setPosition(s * (6.4 + i * .8), .26, zT); sl.setMatrixAt(i, m); }
     scene.add(sl);
-    for (const dz of [-.72, .72]) box(274, .16, .1, 0xa5abb1, s * (6.7 + 137), .38, zT + dz, scene, false);
-    box(274, .05, 6, 0x44474c, s * (6.7 + 137), .03, 3.9, scene, false);                                 // the road, either side
+    for (const dz of [-.72, .72]) box(274, .16, .1, 0xa5abb1, s * (6.05 + 137), .38, zT + dz, scene, false);
+    box(274, .05, 6, 0x44474c, s * (6.05 + 137), .03, 3.9, scene, false);                                 // the road, either side
     for (let x = 9; x < 280; x += 4) box(2, .02, .12, 0xdcdccc, s * x, .07, 3.9, scene, false);
   }
   let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -334,14 +335,14 @@ function buildBridgeWorld() {
 const bridgeDevice = () => {
   const hinges = [], arms = [], lamps = [], boatMeshes = new Map();
   for (const s of [-1, 1]) {
-    const hinge = new THREE.Group(); hinge.position.set(s * 6, .35, 1.0); scene.add(hinge);
+    const hinge = new THREE.Group(); hinge.position.set(s * 6, 0, 1.0); scene.add(hinge);
     const L = new THREE.Group(); L.position.x = -s * 3; hinge.add(L);                              // a leaf: 6 wide, reaching in from its hinge at the bank
-    box(6, .4, 13, 0x5b5f66, 0, 0, 0, L);
-    box(6, .2, 3, 0x7a746a, 0, .3, -3.5, L, false);
-    for (let i = -2.6; i <= 2.6; i += .8) box(.3, .12, 2.4, 0x4b3a2a, i, .42, -3.5, L, false);
-    for (const dz of [-.72, .72]) box(6, .16, .1, 0xa5abb1, 0, .56, -3.5 + dz, L, false);
-    box(6, .1, 6, 0x44474c, 0, .25, 2.9, L, false);
-    for (let i = -2.5; i <= 2.6; i += 1.5) box(.8, .02, .12, 0xdcdccc, i, .31, 2.9, L, false);
+    box(6, .5, 13, 0x5b5f66, 0, -.28, 0, L);
+    box(6, .2, 3, 0x7a746a, 0, .1, -3.5, L, false);
+    for (let i = -2.6; i <= 2.6; i += .8) box(.3, .12, 2.4, 0x4b3a2a, i, .26, -3.5, L, false);
+    for (const dz of [-.72, .72]) box(6, .16, .1, 0xa5abb1, 0, .38, -3.5 + dz, L, false);
+    box(6, .05, 6, 0x44474c, 0, .03, 2.9, L, false);
+    for (let i = -2.5; i <= 2.6; i += 1.5) box(.8, .02, .12, 0xdcdccc, i, .07, 2.9, L, false);
     hinges.push({ hinge, s });
     for (const z of [-5.2, 7.4]) box(1.2, 3.4, 1.2, 0x6d7a86, s * 6.9, 1.7, z);                       // towers at the corners
   }
@@ -353,8 +354,14 @@ const bridgeDevice = () => {
     const a = sphere(.14, 0x3a1010), b = sphere(.14, 0x3a1010); a.position.set(-.25, 1.7, 0); b.position.set(.25, 1.7, 0); post.add(a, b);
     arms.push(pivot); lamps.push([a, b]);
   }
+  const fx = (SC.crossing.footX - 500) * U;                                                    // the signaller's foot crossing over the line, by the foot of the box stairs, with one wig-wag
+  box(1.8, .04, 5.9, 0xb5a98a, fx, .03, -6.95, scene, false); box(1.8, .04, 2.6, 0xb5a98a, fx, .03, -.1, scene, false);
+  box(1.8, .3, 3.2, 0x7a6a55, fx, .15, -2.5, scene, false);
+  for (const dz of [-.72, .72]) box(1.8, .1, .1, 0xa5abb1, fx, .36, -2.5 + dz, scene, false);
+  const ww = wigWags();
   return now => {
     const ang = S.lift * 1.4;
+    ww(now);
     for (const o of hinges) o.hinge.rotation.z = -o.s * ang;
     for (const p of arms) p.rotation.x = (Math.PI / 2) * (1 - S.gate);
     const ph = Math.floor(now * 2) % 2;
@@ -366,7 +373,7 @@ const bridgeDevice = () => {
         const bow = new THREE.Mesh(new THREE.ConeGeometry(1.2, 1.8, 4), mat(parseInt(b.col.slice(1), 16))); bow.rotation.x = b.dir < 0 ? -Math.PI / 2 : Math.PI / 2; bow.rotation.y = Math.PI / 4; bow.position.set(0, .35, b.dir * 3.6); m.add(bow);
         scene.add(m); boatMeshes.set(b, m);
       }
-      m.position.set(0, .05, Z3(b.y));
+      m.position.set(0, -.4, Z3(b.y));
     }
     for (const [b, m] of boatMeshes) if (!S.boats.includes(b)) { scene.remove(m); boatMeshes.delete(b); }
   };
@@ -397,6 +404,7 @@ function buildStairs(sbox, floorY) {
   return { x0: 3.7, x1: 3.7 + n * run, y0: floorY };
 }
 function outsideSurfaces(w) {
+  if (w.extraSurfaces) { const z1 = Math.min(...w.tracks.map(Z3)) - 1.8, rh = w.riverHalf || 0; return [{ x0: -70, x1: -rh, z0: -45, z1, y: 0 }, { x0: rh, x1: 70, z0: -45, z1, y: 0 }, ...w.extraSurfaces]; }
   if (w.noCross) return [{ x0: -70, x1: 70, z0: -45, z1: Math.min(...w.tracks.map(Z3)) - 1.8, y: 0 }];
   const zs = w.tracks.map(Z3), zmin = Math.min(...zs), zmax = Math.max(...zs), k = w.skew || 0, hw = (w.roadW || 6) / 2 / Math.cos(Math.atan(k)) + .3;
   const out = [{ x0: -70, x1: 70, z0: -45, z1: zmin - 1.8, y: 0 }];                                            // the ground north of the line
@@ -588,8 +596,10 @@ SIMPLE.warthamhighway = { box: [15.7, -10.7], control: { type: 'console', labels
     box(12, .3, 5, 0xc0392b, -17, 3.4, 15); for (const x of [-21, -13]) box(.3, 3.4, .3, 0x8a8f95, x, 1.7, 15); box(7.6, 2.6, 3.4, 0xe8e2d0, -17, 1.3, 20);
     for (const x of [-20, -17, -14]) box(.6, 1.4, .6, 0xd22a22, x, .7, 15, scene, false);
   } };
-SIMPLE.barkleybridge = { box: [13.7, -9.7], control: { type: 'bridge' }, device: bridgeDevice, worldFn: buildBridgeWorld, overview: [22, 24, 28], world: { tracks: [235], noCross: true },
-  extraBlockers: [{ x0: -6.8, x1: 6.8, z0: -60, z1: 60, y: 0 }],
+SIMPLE.barkleybridge = { box: [13.7, -9.7], control: { type: 'bridge' }, device: bridgeDevice, worldFn: buildBridgeWorld, overview: [22, 24, 28], world: { tracks: [235], noCross: true, riverHalf: 6.8, extraSurfaces: [
+    { x0: 25.1, x1: 26.9, z0: -4.4, z1: -.5, y: .3 },                                             // planks over the foot crossing
+    { x0: -70, x1: -6.8, z0: -.5, z1: 45, y: .04 }, { x0: 6.8, x1: 70, z0: -.5, z1: 45, y: .04 },   // the south side
+    { x0: -6.8, x1: 6.8, z0: -5.8, z1: 7.8, y: .04, when: () => S.lift < .02 }] },             // the bridge deck: walkable while it is down
   scenery() {   // quayside houses and warehouses
     const cols = [0xb5876b, 0xc9b48a, 0x9a6a5a, 0xb9a58f, 0x8f7a6a];
     const house = (x, z, w, d, h, c) => { box(w, h, d, c, x, h / 2, z); const r = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w, d) * .72, 1.8, 4), mat(0x6f3a2a)); r.position.set(x, h + .9, z); r.rotation.y = Math.PI / 4; r.castShadow = true; scene.add(r); };
@@ -676,7 +686,7 @@ const inRect = (s, x, z) => x >= s.x0 && x <= s.x1 && z >= s.z0 && z <= s.z1;
 function surfaceY(x, z, curY) {
   let best = null, bd = 1e9;
   for (const s of B3.surfaces) {
-    if (!inRect(s, x, z)) continue;
+    if (!inRect(s, x, z) || (s.when && !s.when())) continue;
     const h = s.axis ? rampH(s, x, z) : s.y;
     if (s.axis && Math.abs(h - curY) <= .35) return h;          // a stair under your feet beats the flat floor below it
     const d = Math.abs(h - curY); if (d < bd) { bd = d; best = h; }
@@ -726,6 +736,7 @@ function frame() {
     }
     camera.rotation.set(L.pitch, L.yaw, 0);
   }
+  S.playerOnSpan = camMode === 'walk' && SC.key === 'barkleybridge' && Math.abs(walk.x) < 7 && walk.z > -6 && walk.z < 8 && walk.sy < 1.5;
   renderer.render(scene, camera);
 }
 
