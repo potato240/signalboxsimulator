@@ -56,7 +56,12 @@ function buildWorld(o) {
     sl.receiveShadow = true; scene.add(sl);
     for (const dz of [-.72, .72]) box(560, .16, .1, 0xa5abb1, 0, .38, z + dz, scene, false);
   }
-  const deck = box(rw, .34, (zmax - zmin) / Math.cos(a), o.deckColor || 0x2c2e32, ((zmax + zmin) / 2) * k, .17, (zmax + zmin) / 2, scene, false); deck.rotation.y = a;
+  if (k) {                                                      // parallelogram deck following the road across the tracks
+    const hw = rw / 2 / Math.cos(a), P = [[zmin * k - hw, zmin], [zmin * k + hw, zmin], [zmax * k + hw, zmax], [zmax * k - hw, zmax]], pos = [], nor = [];
+    for (const i of [0, 2, 1, 0, 3, 2]) { pos.push(P[i][0], .34, P[i][1]); nor.push(0, 1, 0); }
+    const gm = new THREE.BufferGeometry(); gm.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); gm.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    const dm = new THREE.Mesh(gm, new THREE.MeshLambertMaterial({ color: o.deckColor || 0x2c2e32, side: THREE.DoubleSide })); dm.receiveShadow = true; scene.add(dm);
+  } else box(rw, .34, zmax - zmin, o.deckColor || 0x2c2e32, 0, .17, (zmax + zmin) / 2, scene, false);
   for (const z of zs) for (const dz of [-.72, .72]) box(rw / Math.cos(a) + .3, .1, .1, 0xa5abb1, (z + dz) * k, .38, z + dz, scene, false);
   if (o.poles) for (let x = -250; x <= 250; x += 25) if (Math.abs(x) > 8) { box(.15, 6, .15, 0x5b4630, x, 3, o.poles); box(1.6, .12, .12, 0x5b4630, x, 5.7, o.poles); }
   let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -214,6 +219,29 @@ const germanBarriers = () => {
     const ph = Math.floor(now * 2) % 2, on = S.gate > .02;
     for (const [a, b] of lamps) { a.material.color.set(on && ph === 0 ? 0xff3030 : 0x3a1010); b.material.color.set(on && ph === 1 ? 0xff3030 : 0x3a1010); }
   };
+};
+const wigWags = () => {
+  // a wig-wag as in the photo: a white post, a grey mechanism box, and a long arm swinging about the box with a white disc (black cross, red lamp) on top and a counterweight below
+  const k = SC.crossing.skew, a = Math.atan(k), half = 30 * Math.sqrt(1 + k * k), items = [];
+  const grey = 0x9aa0a6, silver = 0xcfd3d6;
+  for (const [by, sgn] of [[185, 1], [335, -1]]) {
+    const g = new THREE.Group(); g.position.set(((by - 260) * k + sgn * (half + 26)) * U, 0, Z3(by)); g.rotation.y = by < 260 ? a + Math.PI : a; g.scale.setScalar(.62); scene.add(g);   // turned square to the road, facing its traffic; a compact size
+    const foot = new THREE.Mesh(new THREE.CylinderGeometry(.3, .34, .18, 14), mat(0xaab0b6)); foot.position.y = .09; foot.castShadow = true; g.add(foot);
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(.14, .17, 2.9, 12), mat(silver)); mast.position.y = 1.55; mast.castShadow = true; g.add(mast);
+    box(1.0, 1.25, .5, grey, 0, 3.4, 0, g); box(.7, .35, .06, 0x6a7076, 0, 3.6, .27, g, false);
+    const pivot = new THREE.Group(); pivot.position.set(0, 3.45, .36); g.add(pivot);
+    box(.09, 2.5, .07, 0x8d9399, 0, .55, 0, pivot, false);                                                     // the arm
+    const cw = new THREE.Mesh(new THREE.CylinderGeometry(.42, .42, .1, 18), mat(grey)); cw.rotation.x = Math.PI / 2; cw.position.set(0, -.75, 0); pivot.add(cw);    // counterweight
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(.62, .62, .1, 28), mat(0xffffff)); disc.rotation.x = Math.PI / 2; disc.position.set(0, 1.95, 0); pivot.add(disc);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(.62, .03, 8, 28), mat(0x222222)); rim.position.set(0, 1.95, 0); pivot.add(rim);
+    for (const zz of [.07, -.07]) for (const ang of [Math.PI / 4, -Math.PI / 4]) { const bar = box(1.05, .15, .02, 0x111111, 0, 1.95, zz, pivot, false); bar.rotation.z = ang; }
+    const lamp = new THREE.Mesh(new THREE.CylinderGeometry(.24, .24, .06, 20), glow(0x5a1818)); lamp.rotation.x = Math.PI / 2; lamp.position.set(0, 1.95, 0); pivot.add(lamp);
+    const lamp2 = lamp.clone(); lamp2.material = lamp.material; pivot.add(lamp2);
+    const ring2 = new THREE.Mesh(new THREE.TorusGeometry(.24, .03, 8, 20), mat(silver)); ring2.position.set(0, 1.95, .05); pivot.add(ring2);
+    lamp.position.z = .07; lamp2.position.z = -.07;
+    items.push({ pivot, lamp });
+  }
+  return now => { const on = S.lights, sw = on ? Math.sin(now * 2 * Math.PI * .8) * .75 : 0; for (const o of items) { o.pivot.rotation.z = sw; o.lamp.material.color.set(on ? 0xff2a2a : 0x5a1818); } };
 };
 const mwlLights = () => {
   const heads = [];
@@ -437,6 +465,14 @@ function buildOtla() {
     hint(u) { return u.act === 'gate' ? `${u.side === 'n' ? 'North' : 'South'} gates: click to swing ${S.gateTarget[u.side] ? 'open' : 'shut'}` : null; } };
 }
 
+SIMPLE.highbarkley = { box: [13.7, -9.7], control: { type: 'console', labels: ['WIG-WAG', 'OFF'], hints: ['Start the wig-wags', 'Stop the wig-wags'] }, device: wigWags, overview: [34, 22, 32],
+  world: { tracks: [235, 285], skew: Math.tan(50 * Math.PI / 180), roadW: 6, trees: 220, treeSkip: forestSkip(13.7, -9.7) },
+  scenery() {   // a church and stone cottages
+    const cot = (x, z, w, d, h, c) => { box(w, h, d, c, x, h / 2, z); const r = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w, d) * .72, 1.6, 4), mat(0x6f4a38)); r.position.set(x, h + .8, z); r.rotation.y = Math.PI / 4; r.castShadow = true; scene.add(r); };
+    for (const [x, z, c] of [[-44, 13, 0xc9b48a], [-37, 14, 0xb9a58f], [-30, 13, 0xbda27e], [-22, 14.5, 0xc9b48a], [27, 11, 0xbda27e], [34, 12, 0xb9a58f]]) cot(x, z, 5, 4, 3.4, c);
+    box(3.4, 4.4, 5, 0x9b958a, -14, 2.2, 15); box(2.2, 2.6, 2.2, 0x8a8478, -14, 5.7, 14); const sp = new THREE.Mesh(new THREE.ConeGeometry(1.7, 3, 4), mat(0x6f6a60)); sp.position.set(-14, 8.5, 14); sp.rotation.y = Math.PI / 4; scene.add(sp);
+    for (const [x0, x1, z] of [[-48, -17, -7], [21, 48, 7], [-48, -17, 7]]) box(x1 - x0, .7, .4, 0x8f8a7a, (x0 + x1) / 2, .35, z, scene, false);
+  } };
 SIMPLE.parkside = { box: [9.7, -10.3], control: { type: 'wheel', name: ['BARRIER', 'WHEEL'] }, device: germanBarriers, overview: [36, 24, 36],
   world: { tracks: [210, 260, 310], trees: 0, centre: true },
   scenery() {   // the town: terraces either side, the park to the north-west, station platform and plaza to the south-east
@@ -581,5 +617,5 @@ function start() {
   setView('box');
   return { frame };
 }
-window.SBS3D = { start, debug: () => ({ walk, walkStep, B3 }) };
+window.SBS3D = { start, debug: () => ({ walk, walkStep, B3, modeLook }) };
 })();

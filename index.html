@@ -83,6 +83,7 @@
   <div class="picks">
     <button class="pick" data-box="bailey"><b>Bailey Crossing</b><span>Quiet single line. Wheel-operated gates and two protecting signals. A gentle start.</span></button>
     <button class="pick" data-box="otla"><b>Otla</b><span>Quiet single line with hand-swung gates and no road lights. The signalman has to walk out to swing them.</span></button>
+    <button class="pick" data-box="highbarkley"><b>High Barkley</b><span>Two-track line in hill country. A wig-wag crossing, no gates, and the road meets the line at a sharp angle.</span></button>
     <button class="pick" data-box="parkside"><b>Parkside Plaza Station</b><span>Busy town crossing on a three-track line with a station. German-style barriers on both sides, all four booms worked by one wheel.</span></button>
     <button class="pick" data-box="valleybridge"><b>Valley Bridge</b><span>Two-track line over a road by a river valley. One wheel rolls out four trolley gates at once.</span></button>
     <button class="pick" data-box="quayfootpath"><b>Fourth Lane Quay Footpath</b><span>A footpath to the quay crosses the line. A red light on each side stops the walkers.</span></button>
@@ -93,7 +94,7 @@
   </div>
   <ol>
     <li>The <b>bell</b> rings when a train is offered. <b>Accept</b> it at its block instrument.</li>
-    <li>Close the road: turn the gate wheel (Bailey) or barrier wheel (Straw Lake), trolley gate wheel (Valley Bridge) or barrier wheel (Parkside Plaza), lower the barriers (Tuborne) or switch on the crossing lights (Lee Forest, Fourth Lane Quay Footpath and Brickworks) or swing the gates by hand (Otla). A stalled vehicle will block this.</li>
+    <li>Close the road: turn the gate wheel (Bailey) or barrier wheel (Straw Lake), trolley gate wheel (Valley Bridge) or barrier wheel (Parkside Plaza), lower the barriers (Tuborne) or switch on the crossing lights (Lee Forest, Fourth Lane Quay Footpath and Brickworks) or start the wig-wags (High Barkley) or swing the gates by hand (Otla). A stalled vehicle will block this.</li>
     <li>Road shut? Pull that train's <b>signal lever</b>. After the train passes, restore the lever and reopen the road.</li>
   </ol>
   <p style="color:var(--dim)">Shortcuts: keys 1&ndash;4 pull levers; &rarr; shuts the road and &larr; opens it at every crossing (wheel, barriers, gates and lights). In 3D, key <b>V</b> cycles Window, Walk (WASD, mouse to look, click levers, instruments and controls) and Overview.</p>
@@ -200,6 +201,19 @@ const SCENARIOS = {
       { id: 'U', name: 'Up Main', desc: 'westbound', dir: -1, group: 'U', ty: 210, x: 620, y: 231 },
       { id: 'D', name: 'Down Main', desc: 'eastbound', dir: 1, group: 'D', ty: 260, x: 380, y: 239, vmax: 120 },
       { id: 'P', name: 'Platform line', desc: 'eastbound, calls', dir: 1, group: 'P', ty: 310, x: 380, y: 289, vmax: 100, color: 0x2a4d86, station: { front: 900, dwell: 12 } }
+    ]
+  },
+  highbarkley: {
+    title: 'High Barkley', trainLen: 140, offerGap: [40, 75], carGap: [8, 16],
+    // wig-wag crossing, no gates; the road meets the line at a sharp angle (about 50 degrees off square) while the railway stays straight
+    crossing: {
+      type: 'lights', style: 'wigwag', skew: Math.tan(50 * Math.PI / 180), clearance: 90, bell: true, delay: 2, zone: [212, 308], stopN: 340, stopS: 180, runners: 0,
+      ui: { title: 'Wig-wag signals', red: 'Start wig-wags', green: 'Stop wig-wags', lampOff: 'Wig-wags off', lampOn: 'Wig-wags SWINGING', wait: 'Wig-wags starting…', ready: 'Wig-wags swinging — safe to signal',
+            msgOn: 'Wig-wags starting.', msgOff: 'Wig-wags stopped.', note: 'The wig-wag swings and its bell rings. There are no gates or barriers: signal a train once they swing and the crossing is clear.' }
+    },
+    signals: [
+      { id: 'U', name: 'Up line', desc: 'westbound', dir: -1, group: 'U', ty: 235, x: 650, y: 256 },
+      { id: 'D', name: 'Down line', desc: 'eastbound', dir: 1, group: 'D', ty: 285, x: 350, y: 264 }
     ]
   }
 };
@@ -327,6 +341,7 @@ function updateCrossing(dt) {
   if (SC.crossing.type === 'lights') {
     if (S.cmd === 'red') { S.lightT += dt; if (S.lightT >= (SC.crossing.delay ?? 2)) S.lights = true; }
     S.gate = S.lights ? 1 : 0;      // no clear time: signals can be cleared as soon as the lights show red
+    if (SC.crossing.bell && S.lights) { S.beepT -= dt; if (S.beepT <= 0) { ding(1250, 0, .12, .1); S.beepT = .45; } }
     $('lkG').textContent = !S.cmd ? ui().lampOff : !S.lights ? ui().wait : ui().ready;
     return;
   }
@@ -397,7 +412,7 @@ function spawnCar(dy) {
     S.cars.push({ ped: true, runner: false, wasBefore: true, x: lane, lane, y, dy, v: 0, wait: 0, flagged: false, col: cols[Math.floor(Math.random() * cols.length)], stall: 0, stallArmed: true });
     return;
   }
-  const lane = dy > 0 ? ROAD_X + 15 : ROAD_X - 15;                    // drive on the left
+  const q = Math.sqrt(1 + (X.skew || 0) ** 2), lane = dy > 0 ? ROAD_X + 15 * q : ROAD_X - 15 * q;                    // drive on the left
   const cols = [0xc0c8d0, 0xd4553f, 0x3b6fd4, 0xe9c24a, 0x2f2f35, 0x58a36a];
   S.cars.push({ runner: Math.random() < (X.runners || 0), wasBefore: true, x: lane, lane, y, dy, v: 0, wait: 0, flagged: false, col: cols[Math.floor(Math.random() * cols.length)], stall: 0, stallArmed: false });
 }
@@ -672,6 +687,22 @@ const SCENERY = {
     },
     over() {}
   },
+  highbarkley: {
+    under() {
+      ctx.fillStyle = 'rgba(20,60,30,.22)'; for (const [x, y, rx, ry] of [[130, 80, 140, 60], [820, 400, 160, 55], [300, 440, 150, 36]]) { ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, 7); ctx.fill(); }   // rises of the hill
+      ctx.strokeStyle = '#8f8a7a'; ctx.lineWidth = 3; ctx.setLineDash([6, 3]);                                  // dry stone walls
+      for (const [x0, y0, x1, y1] of [[20, 190, 330, 190], [660, 330, 980, 330], [20, 330, 330, 330]]) { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); }
+      ctx.setLineDash([]);
+      const cottage = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); ctx.fillStyle = '#6f4a38'; ctx.fillRect(x - 3, y - 4, w + 6, 10); ctx.fillStyle = '#9fd3e8'; ctx.fillRect(x + 6, y + h - 14, 7, 7); ctx.fillRect(x + w - 13, y + h - 14, 7, 7); };
+      cottage(60, 372, 54, 38, '#c9b48a'); cottage(130, 384, 48, 34, '#b9a58f'); cottage(196, 372, 56, 40, '#bda27e'); cottage(268, 388, 46, 32, '#c9b48a');
+      cottage(800, 372, 54, 38, '#bda27e'); cottage(868, 384, 50, 34, '#b9a58f');
+      ctx.fillStyle = '#9b958a'; ctx.fillRect(360, 392, 34, 44); ctx.fillStyle = '#6f4a38'; ctx.fillRect(356, 386, 42, 9);        // church
+      ctx.fillStyle = '#8a8478'; ctx.fillRect(372, 366, 10, 26); ctx.beginPath(); ctx.moveTo(370, 366); ctx.lineTo(384, 366); ctx.lineTo(377, 346); ctx.fill();
+      text('High Barkley', 377, 452, 10, '#e8e2d0');
+      signalBox(600, 130, 74, 46, 'HIGH BARKLEY');
+    },
+    over() {}
+  },
   tuborne: {
     under() {
       for (const [y, edge] of [[120, 166], [350, 350]]) {
@@ -708,6 +739,23 @@ function armBar(px, py, ang, len) {
   ctx.fillStyle = '#eee'; ctx.fillRect(0, -3, len, 6);
   ctx.fillStyle = '#d32'; for (let i = 0; i < len; i += 14) ctx.fillRect(i, -3, Math.min(7, len - i), 6);
   ctx.restore(); ctx.fillStyle = '#555'; ctx.beginPath(); ctx.arc(px, py, 4, 0, 7); ctx.fill();
+}
+function drawWigWag() {
+  // a wig-wag as in the photo: post, grey mechanism box, and an arm that swings about the box, carrying a white disc with a black cross and a red lamp, balanced by a counterweight
+  const k = SC.crossing.skew || 0, half = 30 * Math.sqrt(1 + k * k), rx = y => ROAD_X + (y - TRACK_Y) * k;
+  const sw = S.lights ? Math.sin(S.t * 2 * Math.PI * .8) * .75 : 0;
+  for (const [x, y] of [[rx(185) + half + 26, 185], [rx(335) - half - 26, 335]]) {
+    ctx.fillStyle = '#cfd3d6'; ctx.fillRect(x - 3, y - 6, 6, 28); ctx.fillStyle = '#aab0b6'; ctx.fillRect(x - 5, y + 20, 10, 3);                // post and its foot
+    ctx.fillStyle = '#9aa0a6'; ctx.fillRect(x - 8, y - 20, 16, 17); ctx.strokeStyle = '#6a7076'; ctx.strokeRect(x - 8, y - 20, 16, 17);   // mechanism box
+    ctx.save(); ctx.translate(x, y - 12); ctx.rotate(sw);
+    ctx.strokeStyle = '#8d9399'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 9); ctx.lineTo(0, -22); ctx.stroke();            // the arm
+    ctx.fillStyle = '#9aa0a6'; ctx.beginPath(); ctx.arc(0, 9, 5, 0, 7); ctx.fill(); ctx.strokeStyle = '#6a7076'; ctx.lineWidth = 1; ctx.stroke();   // counterweight
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, -29, 11, 0, 7); ctx.fill(); ctx.strokeStyle = '#222'; ctx.lineWidth = 1.5; ctx.stroke();   // disc
+    ctx.strokeStyle = '#111'; ctx.lineWidth = 3.5; ctx.beginPath(); ctx.moveTo(-7.5, -36.5); ctx.lineTo(7.5, -21.5); ctx.moveTo(7.5, -36.5); ctx.lineTo(-7.5, -21.5); ctx.stroke();
+    ctx.fillStyle = S.lights ? '#ff2a2a' : '#5a1818'; ctx.beginPath(); ctx.arc(0, -29, 4, 0, 7); ctx.fill();
+    if (S.lights) { ctx.shadowColor = '#f00'; ctx.shadowBlur = 12; ctx.beginPath(); ctx.arc(0, -29, 3, 0, 7); ctx.fill(); ctx.shadowBlur = 0; }
+    ctx.restore();
+  }
 }
 function drawFootLights() {
   for (const [x, y] of [[ROAD_X + 16, 222], [ROAD_X - 16, 298]]) {
@@ -761,6 +809,7 @@ const CROSSING = {
     }
   },
   lights() {
+    if (SC.crossing.style === 'wigwag') return drawWigWag();
     if (SC.crossing.style === 'footpath') return drawFootLights();
     if (SC.crossing.style === 'aocl') return drawFlashing();
     // miniature warning lights facing each approach: red over green
