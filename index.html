@@ -83,6 +83,7 @@
   <div class="picks">
     <button class="pick" data-box="bailey"><b>Bailey Crossing</b><span>Quiet single line. Wheel-operated gates and two protecting signals. A gentle start.</span></button>
     <button class="pick" data-box="otla"><b>Otla</b><span>Quiet single line with hand-swung gates and no road lights. The signalman has to walk out to swing them.</span></button>
+    <button class="pick" data-box="barkleybridge"><b>Barkley Bridge</b><span>A lifting bridge carries the railway and a road over a river. Lift it for boats once the road and railway are stopped. No scoring.</span></button>
     <button class="pick" data-box="warthamhighway"><b>Wartham Highway</b><span>A single track across a busy four-lane road, with wig-wags facing each approach. Fast traffic, two lanes each way.</span></button>
     <button class="pick" data-box="barkleystation"><b>Barkley Station</b><span>A town crossing with wig-wags and a side road joining beside it. Two tracks, both calling at an island platform.</span></button>
     <button class="pick" data-box="highbarkley"><b>High Barkley</b><span>Two-track line in hill country. A wig-wag crossing, no gates, and the road meets the line at a sharp angle.</span></button>
@@ -247,6 +248,15 @@ const SCENARIOS = {
       { id: 'W', name: 'West signal', desc: 'eastbound', dir: 1, group: 'T', ty: 260, x: 330, y: 236 },
       { id: 'E', name: 'East signal', desc: 'westbound', dir: -1, group: 'T', ty: 260, x: 670, y: 284 }
     ]
+  },
+  barkleybridge: {
+    title: 'Barkley Bridge', trainLen: 140, offerGap: [50, 90], carGap: [6, 12], noScore: true,
+    // a river runs north-south under a double-leaf lifting bridge that carries a single railway and a road side by side; boats ask for it to be lifted
+    crossing: { type: 'bridge', noRoad: true, clearance: 78, zone: [0, 0] },
+    signals: [
+      { id: 'W', name: 'West signal', desc: 'eastbound', dir: 1, group: 'T', ty: 235, x: 340, y: 214 },
+      { id: 'E', name: 'East signal', desc: 'westbound', dir: -1, group: 'T', ty: 235, x: 660, y: 254 }
+    ]
   }
 };
 
@@ -255,7 +265,7 @@ let SC = null, S = null, B3 = null;
 const sigById = id => SC.signals.find(s => s.id === id);
 function reset() {
   S = { t: 0, running: false, score: 0, trainsDone: 0, trainDelay: 0, complaints: 0, penalties: 0,
-        gate: 0, cmd: null, lights: false, lightT: 0, beepT: 0, gates: { n: 0, s: 0 }, gateTarget: { n: 0, s: 0 }, auto: null,
+        gate: 0, cmd: null, lights: false, lightT: 0, beepT: 0, lift: 0, liftCmd: null, boats: [], boatTimer: 25, gates: { n: 0, s: 0 }, gateTarget: { n: 0, s: 0 }, auto: null,
         sigOff: {}, inst: {}, trains: [], cars: [], carTimer: { n: 3, s: 6 }, offerTimer: 8, bellTimer: 0, breakdownArmed: 0, msgTimer: 0 };
   for (const s of SC.signals) { S.sigOff[s.id] = false; S.inst[s.id] = 'normal'; }
 }
@@ -263,8 +273,9 @@ window.__dbg = () => S;
 window.__step = (secs) => { for (let i = 0; i < secs * 20; i++) update(.05); };
 
 const zoneOf = () => SC.crossing.zone;
-const carsInZone = () => S.cars.filter(c => c.y > zoneOf()[0] && c.y < zoneOf()[1]);
-const gateClosed = () => S.gate >= 0.999;
+const isBridge = () => SC.crossing.type === 'bridge';
+const carsInZone = () => isBridge() ? S.cars.filter(c => c.x > 435 && c.x < 565) : S.cars.filter(c => c.y > zoneOf()[0] && c.y < zoneOf()[1]);
+const gateClosed = () => isBridge() ? S.lift <= 0.001 : S.gate >= 0.999;
 const trainRear = tr => tr.x - tr.dir * SC.trainLen;
 const sigDist = tr => (tr.sig.x - tr.x) * tr.dir;                       // >0: signal still ahead
 const rearClear = tr => (trainRear(tr) - (ROAD_X + tr.dir * (SC.crossing.clearance || 40))) * tr.dir > 0;
@@ -302,8 +313,8 @@ function toggleLever(id) {
   if (S.sigOff[id]) { S.sigOff[id] = false; lk.textContent = ''; say('Signal returned to danger.'); return; }
   let why = '';
   if (SC.signals.some(o => o !== sig && o.group === sig.group && S.sigOff[o.id])) why = 'Opposing signal is off';
-  else if (!gateClosed()) why = SC.crossing.type === 'lights' ? 'Locked: road lights not red yet' : SC.crossing.type === 'barrier' || SC.crossing.barriers ? 'Locked: barriers not down' : 'Locked: gates not closed';
-  else if (carsInZone().length) why = 'Locked: vehicle on the crossing';
+  else if (!gateClosed()) why = isBridge() ? 'Locked: the bridge is not down' : SC.crossing.type === 'lights' ? 'Locked: road lights not red yet' : SC.crossing.type === 'barrier' || SC.crossing.barriers ? 'Locked: barriers not down' : 'Locked: gates not closed';
+  else if (!isBridge() && carsInZone().length) why = 'Locked: vehicle on the crossing';
   else if (S.inst[id] !== 'accepted') why = 'No train accepted on that line';
   if (why) { lk.textContent = why; say(why + '.'); el.classList.add('shake'); setTimeout(() => el.classList.remove('shake'), 320); return; }
   S.sigOff[id] = true; lk.textContent = ''; say(sig.name + ' cleared.', 3);
@@ -371,7 +382,67 @@ function updateHand(dt) {
   }
   S.gate = Math.min(S.gates.n, S.gates.s);
 }
+const boatInChannel = () => S.boats.some(b => b.state === 'pass');
+function bridgeCmd(cmd) {
+  if (!S.running || !isBridge()) return;
+  if (cmd === 'close') {
+    if (S.gate >= 1 || S.cmd === 'lower') return;
+    S.cmd = 'lower'; if (!S.lights) { S.lights = true; S.lightT = 0; } else S.lightT = Math.max(S.lightT, 3); say('Road lights on, barriers lowering.', 3);
+  } else if (cmd === 'open') {
+    if (S.lift > .001 || S.liftCmd) say('Locked: the bridge is lifted.');
+    else if (S.lights) { S.cmd = 'raise'; say('Barriers rising.', 3); }
+  } else if (cmd === 'lift') {
+    const why = S.lift >= 1 ? 'The bridge is already up.' : S.gate < .999 ? 'Locked: close the road barriers first.' : anySigOff() ? 'Locked: a signal is off.' : approachLocked() ? 'Locked: a train is on or about to enter the bridge.' : carsInZone().length ? 'Locked: a vehicle is on the bridge.' : '';
+    if (why) say(why); else { S.liftCmd = 'up'; say('Lifting the bridge.', 3); }
+  } else if (cmd === 'lower') {
+    if (S.lift <= 0) return;
+    if (boatInChannel()) say('Locked: a boat is under the bridge.'); else { S.liftCmd = 'down'; say('Lowering the bridge.', 3); }
+  }
+}
+function updateBridge(dt) {
+  if (S.cmd === 'lower') { S.lights = true; S.lightT += dt; if (S.lightT >= 3) { S.gate = Math.min(1, S.gate + dt / 6); if (S.gate >= 1) S.cmd = null; } }
+  else if (S.cmd === 'raise') { S.gate = Math.max(0, S.gate - dt / 5); if (S.gate <= 0) { S.cmd = null; S.lights = false; S.lightT = 0; } }
+  if (S.lights && S.gate < .999) { S.beepT -= dt; if (S.beepT <= 0) { ding(1500, 0, .07, .12); S.beepT = .4; } }
+  if (S.liftCmd === 'up') { S.lift = Math.min(1, S.lift + dt / 12); if (S.lift >= 1) { S.liftCmd = null; say('Bridge fully up.', 3); } }
+  else if (S.liftCmd === 'down') { S.lift = Math.max(0, S.lift - dt / 12); if (S.lift <= 0) { S.liftCmd = null; say('Bridge down and locked.', 3); } }
+  // boats ask for the bridge, wait until it is fully up, sail through, and leave
+  S.boatTimer -= dt;
+  if (!S.boats.length && S.boatTimer <= 0) {
+    const dir = Math.random() < .5 ? -1 : 1;
+    S.boats.push({ dir, y: dir < 0 ? H + 40 : -40, state: 'approach', horn: 0, said: false, col: ['#e8e8e8', '#e9c24a', '#d4553f'][Math.floor(Math.random() * 3)] });
+    S.boatTimer = rand([50, 90]); say('A boat is coming up the river.', 4);
+  }
+  for (const b of S.boats) {
+    const hold = b.dir < 0 ? 385 : 135;
+    if (b.state === 'approach') { b.y += b.dir * 35 * dt; if ((b.y - hold) * b.dir >= 0) { b.y = hold; b.state = 'wait'; } }
+    else if (b.state === 'wait') {
+      b.horn -= dt; if (b.horn <= 0) { ding(180, 0, 1, .18); ding(270, 0, .9, .1); b.horn = 9; if (!b.said) { b.said = true; say('A boat is waiting for the bridge to lift.', 6); } }
+      if (S.lift >= .98) b.state = 'pass';
+    } else if (b.state === 'pass') { b.y += b.dir * 35 * dt; if (b.dir < 0 ? b.y < 160 : b.y > 360) b.state = 'leave'; }
+    else b.y += b.dir * 35 * dt;
+  }
+  S.boats = S.boats.filter(b => b.y > -80 && b.y < H + 80);
+  const w = S.boats[0];
+  $('lkG').textContent = S.liftCmd === 'up' ? 'Lifting\u2026' : S.liftCmd === 'down' ? 'Lowering\u2026' : S.lift >= 1 ? (w && w.state === 'pass' ? 'Boat passing under the bridge' : 'Bridge up') : S.cmd === 'lower' ? (S.lightT < 3 ? 'Road lights flashing\u2026' : 'Barriers lowering\u2026') : S.gate >= .999 ? 'Barriers down' : w && w.state === 'wait' ? 'A boat is waiting' : '';
+}
+function spawnBridgeCar(dx) {
+  const cols = [0xc0c8d0, 0xd4553f, 0x3b6fd4, 0xe9c24a, 0x2f2f35, 0x58a36a];
+  S.cars.push({ bridge: true, dx, dy: 1, x: dx > 0 ? -20 : W + 20, y: dx > 0 ? 286 : 312, v: 0, wait: 0, flagged: false, runner: false, wasBefore: true, lane: 0, col: cols[Math.floor(Math.random() * cols.length)], stall: 0, stallArmed: true });
+}
+function updateBridgeCars(dt) {
+  for (const key of ['n', 's']) { S.carTimer[key] -= dt; if (S.carTimer[key] <= 0) { S.carTimer[key] = rand(SC.carGap); spawnBridgeCar(key === 's' ? 1 : -1); } }
+  const open = S.gate <= .12 && S.lift <= .001;                    // road open: barriers up and the bridge down
+  for (const c of S.cars) {
+    const stopX = c.dx > 0 ? 405 : 595, front = c.x + c.dx * 15, before = (front - stopX) * c.dx < 0;
+    let target = 60;
+    if (before && !open) { const room = (stopX - front) * c.dx; target = room <= 1 ? 0 : Math.min(60, Math.sqrt(2 * 80 * room)); }
+    for (const o of S.cars) { if (o === c || o.dx !== c.dx) continue; const gap = (o.x - c.x) * c.dx; if (gap > 0 && gap < 50) target = Math.min(target, gap < 42 ? 0 : o.v); }
+    c.v += Math.max(-200 * dt, Math.min(60 * dt, target - c.v)); c.x += c.dx * c.v * dt;
+  }
+  S.cars = S.cars.filter(c => c.x > -40 && c.x < W + 40);
+}
 function updateCrossing(dt) {
+  if (isBridge()) return updateBridge(dt);
   if (SC.crossing.type === 'hand') return updateHand(dt);
   if (SC.crossing.type === 'lights') {
     if (S.cmd === 'red') { S.lightT += dt; if (S.lightT >= (SC.crossing.delay ?? 2)) S.lights = true; }
@@ -442,7 +513,7 @@ function checkCollisions() {
   for (const tr of S.trains) {
     const x0 = Math.min(tr.x, trainRear(tr)) - 8, x1 = Math.max(tr.x, trainRear(tr)) + 8;
     for (const c of S.cars) if (!c.hit && Math.abs(c.y - tr.sig.ty) < 16 && c.x > x0 && c.x < x1) {
-      c.hit = true; if (!S.debug) S.penalties += 200; ding(110, 0, .8, .4); say(S.debug ? 'COLLISION! A train has hit a vehicle on the crossing.' : 'COLLISION! A train has hit a vehicle on the crossing! -200', 10);
+      c.hit = true; if (!S.debug && !S.noScore) S.penalties += 200; ding(110, 0, .8, .4); say(S.debug || S.noScore ? 'COLLISION! A train has hit a vehicle on the crossing.' : 'COLLISION! A train has hit a vehicle on the crossing! -200', 10);
     }
   }
   if (S.cars.some(c => c.hit)) S.cars = S.cars.filter(c => !c.hit);
@@ -460,6 +531,7 @@ function spawnCar(dy) {
   S.cars.push({ runner: Math.random() < (X.runners || 0), wasBefore: true, x: lane, lane, y, dy, v: 0, wait: 0, flagged: false, col: cols[Math.floor(Math.random() * cols.length)], stall: 0, stallArmed: false });
 }
 function updateCars(dt) {
+  if (isBridge()) return updateBridgeCars(dt);
   const X = SC.crossing, [zt, zb] = X.zone;
   for (const key of ['n', 's']) {
     S.carTimer[key] -= dt;
@@ -540,7 +612,7 @@ function update(dt) {
   if (!S.running) return;
   S.t += dt;
   updateCrossing(dt); updateTrains(dt); updateCars(dt); checkCollisions(); updateOffers(dt);
-  S.score = S.debug ? 0 : Math.round(S.trainsDone * 100 - S.trainDelay - S.complaints * 25 - S.penalties);
+  S.score = (S.debug || S.noScore) ? 0 : Math.round(S.trainsDone * 100 - S.trainDelay - S.complaints * 25 - S.penalties);
   if (S.msgTimer > 0 && (S.msgTimer -= dt) <= 0) $('msg').textContent = S.trains.length ? `${S.trains.length} train(s) on the way.` : 'Line clear. Waiting for the next bell.';
 }
 
@@ -556,6 +628,12 @@ function buildPanel() {
     <svg id="wheel" viewBox="-60 -60 120 120"><g id="wg" stroke="#c9a15a" stroke-width="5" fill="none" stroke-linecap="round"><circle r="48"/><circle r="8" fill="#c9a15a"/><line x1="-48" y1="0" x2="48" y2="0"/><line x1="0" y1="-48" x2="0" y2="48"/><line x1="-34" y1="-34" x2="34" y2="34"/><line x1="34" y1="-34" x2="-34" y2="34"/></g></svg>
     <div class="row"><button id="bOpen">&#9664; Open</button><button id="bClose">Close &#9654;</button></div>
     <div class="gbar"><i id="gfill"></i></div><div class="lock" id="lkG"></div></div>`;
+  else if (X.type === 'bridge') h += `<div class="box ctl"><h3>Lifting bridge</h3>
+    <div class="lamps"><span class="lamp" id="lampBar">Barriers up</span><span class="lamp" id="lampLift">Bridge down</span><span class="lamp" id="lampBoat">No boat</span></div>
+    <div class="row"><button id="bBarClose">Close road barriers</button><button id="bBarOpen">Open road barriers</button></div>
+    <div class="row"><button id="bBrUp">Lift bridge</button><button id="bBrDown">Lower bridge</button></div>
+    <div class="gbar"><i id="gfill"></i></div><div class="lock" id="lkG"></div>
+    <div class="lock">To lift: signals at danger, no train on the bridge, road barriers down, bridge clear. Boats wait until it is fully up. Keys: &rarr; / &larr; barriers, Shift + &rarr; / &larr; lift / lower. No scoring here.</div></div>`;
   else if (X.type === 'lights') h += `<div class="box ctl"><h3>${ui().title}</h3>
     <div class="lamps"><span class="lamp on" id="lampRoad">${ui().lampOff}</span></div>
     <div class="row"><button id="bRed">${ui().red}</button><button id="bGreen">${ui().green}</button></div>
@@ -576,6 +654,7 @@ function buildPanel() {
   if (S.debug) for (const sg of SC.signals) $('sm_' + sg.id).onclick = () => summon(sg.id);
   for (const s of SC.signals) { $('ac_' + s.id).onclick = () => accept(s.id); $('lv_' + s.id).onclick = () => toggleLever(s.id); }
   if (wheelType) bindHold('bOpen', 'open'), bindHold('bClose', 'close');
+  else if (X.type === 'bridge') { $('bBarClose').onclick = () => bridgeCmd('close'); $('bBarOpen').onclick = () => bridgeCmd('open'); $('bBrUp').onclick = () => bridgeCmd('lift'); $('bBrDown').onclick = () => bridgeCmd('lower'); }
   else if (X.type === 'lights') { $('bRed').onclick = () => cmdLights('lower'); $('bGreen').onclick = () => cmdLights('raise'); }
   else if (X.type === 'hand') { $('bCloseAll').onclick = () => handAuto(1); $('bOpenAll').onclick = () => handAuto(0); }
   else { $('bLower').onclick = () => cmdBarrier('lower'); $('bRaise').onclick = () => cmdBarrier('raise'); }
@@ -594,6 +673,12 @@ function updatePanel() {
   }
   $('gfill').style.width = (S.gate * 100) + '%';
   if (SC.crossing.type === 'wheel') $('wg').setAttribute('transform', `rotate(${S.gate * 1080})`);
+  else if (isBridge()) {
+    $('gfill').style.width = (S.lift * 100) + '%';
+    $('lampBar').className = 'lamp' + (S.gate >= .999 ? ' on' : ''); $('lampBar').textContent = S.gate >= .999 ? 'Barriers DOWN' : S.lights ? 'Barriers moving' : 'Barriers up';
+    $('lampLift').className = 'lamp' + (S.lift >= 1 ? ' bad' : S.lift > 0 ? ' on' : ''); $('lampLift').textContent = S.lift >= 1 ? 'Bridge UP' : S.lift > 0 ? 'Bridge moving' : 'Bridge down';
+    const b = S.boats[0]; $('lampBoat').className = 'lamp' + (b && b.state === 'wait' ? ' bad' : b ? ' on' : ''); $('lampBoat').textContent = !b ? 'No boat' : b.state === 'wait' ? 'BOAT WAITING' : b.state === 'pass' ? 'Boat passing' : 'Boat approaching';
+  }
   else if (SC.crossing.type === 'lights') {
     $('lampRoad').className = 'lamp ' + (S.lights ? 'bad' : 'on'); $('lampRoad').textContent = S.lights ? ui().lampOn : S.cmd ? ui().lampWait : ui().lampOff;
   }
@@ -615,7 +700,8 @@ addEventListener('keydown', e => {
   if (SC.crossing.type === 'wheel') { if (e.key === 'ArrowLeft') held.open = true; if (e.key === 'ArrowRight') held.close = true; }
   else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {        // right shuts the road, left opens it
     const shut = e.key === 'ArrowRight';
-    if (SC.crossing.type === 'hand') handAuto(shut ? 1 : 0); else cmdBarrier(shut ? 'lower' : 'raise');
+    if (isBridge()) bridgeCmd(e.shiftKey ? (shut ? 'lift' : 'lower') : (shut ? 'close' : 'open'));
+    else if (SC.crossing.type === 'hand') handAuto(shut ? 1 : 0); else cmdBarrier(shut ? 'lower' : 'raise');
   }
   if (S.running && e.key.startsWith('Arrow')) e.preventDefault();
 });
@@ -635,9 +721,12 @@ function drawBase() {
   ctx.fillStyle = '#2d4a27'; for (let i = 0; i < 50; i++) ctx.fillRect((i * 173) % W, (i * 97) % H, 18, 6);
   const k = SC.crossing.skew || 0, half = (SC.crossing.roadHalf || 30) * Math.sqrt(1 + k * k), rx = y => ROAD_X + (y - TRACK_Y) * k;
   const quad = (y0, y1) => { ctx.beginPath(); ctx.moveTo(rx(y0) - half, y0); ctx.lineTo(rx(y0) + half, y0); ctx.lineTo(rx(y1) + half, y1); ctx.lineTo(rx(y1) - half, y1); ctx.fill(); };
+  const noRoad = SC.crossing.noRoad;
+  if (!noRoad) {
   ctx.fillStyle = SC.crossing.roadColor || '#4a4d52'; quad(0, H);
   ctx.setLineDash([16, 14]); ctx.strokeStyle = SC.crossing.noCentre ? 'rgba(0,0,0,0)' : '#d8d8c8'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(rx(0), 0); ctx.lineTo(rx(H), H); ctx.stroke(); ctx.setLineDash([]);
+  }
   const ys = tracksOf();
   for (const ty of ys) {
     ctx.fillStyle = '#6d675e'; ctx.fillRect(0, ty - 14, W, 28);
@@ -645,8 +734,10 @@ function drawBase() {
     ctx.fillStyle = '#9aa0a6'; ctx.fillRect(0, ty - 7, W, 2.5); ctx.fillRect(0, ty + 5, W, 2.5);
   }
   const top = Math.min(...ys) - 14, bot = Math.max(...ys) + 14;
+  if (!noRoad) {
   ctx.fillStyle = SC.crossing.deckColor || '#3d3f43'; quad(top, bot);
   ctx.fillStyle = '#9aa0a6'; for (const ty of ys) for (const r of [ty - 7, ty + 5]) ctx.fillRect(rx(r) - half, r, half * 2, 2.5);
+  }
 }
 
 function text(t, x, y, size = 11, color = '#e8e2d0', align = 'center') {
@@ -819,6 +910,37 @@ const SCENERY = {
     },
     over() {}
   },
+  barkleybridge: {
+    under() {
+      const ang = S.lift * 1.4;                                   // how far each leaf has tilted: about 80 degrees when fully up
+      ctx.fillStyle = '#2a6aa0'; ctx.fillRect(440, 0, 120, H);                                                 // the river
+      ctx.fillStyle = '#4f93c9'; for (let y = 6; y < H; y += 34) { ctx.fillRect(452 + ((y * 7) % 50), y, 26, 2); ctx.fillRect(500 + ((y * 5) % 45), y + 14, 26, 2); }
+      ctx.fillStyle = '#8a8478'; ctx.fillRect(434, 0, 6, H); ctx.fillRect(560, 0, 6, H);                       // stone banks
+      ctx.fillStyle = '#4a4d52'; for (const [x0, x1] of [[0, 434], [566, W]]) ctx.fillRect(x0, 273, x1 - x0, 52);   // the road, either side of the river
+      ctx.fillStyle = '#d8d8c8'; for (let x = 0; x < W; x += 30) if (x < 420 || x > 580) ctx.fillRect(x, 298, 16, 2);
+      for (const b of S.boats) {                                                                              // boats
+        ctx.save(); ctx.translate(500, b.y); if (b.dir > 0) ctx.rotate(Math.PI);
+        ctx.fillStyle = b.col; ctx.beginPath(); ctx.moveTo(0, -30); ctx.quadraticCurveTo(14, -12, 12, 26); ctx.lineTo(-12, 26); ctx.quadraticCurveTo(-14, -12, 0, -30); ctx.fill();
+        ctx.fillStyle = '#2f4a6a'; ctx.fillRect(-7, -2, 14, 16); ctx.fillStyle = '#9fd3e8'; ctx.fillRect(-5, 0, 10, 4); ctx.restore();
+      }
+      ctx.fillStyle = '#6d7a86'; for (const y of [201, 331]) { ctx.fillRect(424, y, 18, 8); ctx.fillRect(558, y, 18, 8); }   // towers at the corners
+      const w = 60 * Math.cos(ang);                                                                           // each leaf looks narrower from above as it tilts
+      for (const s of [-1, 1]) {
+        const x0 = s < 0 ? 440 : 560 - w;
+        ctx.fillStyle = '#5b5f66'; ctx.fillRect(x0, 205, w, 130);
+        ctx.fillStyle = '#6d675e'; ctx.fillRect(x0, 221, w, 28); ctx.fillStyle = '#9aa0a6'; ctx.fillRect(x0, 228, w, 2.5); ctx.fillRect(x0, 240, w, 2.5);
+        ctx.fillStyle = '#4a4d52'; ctx.fillRect(x0, 273, w, 52); ctx.fillStyle = '#d8d8c8'; ctx.fillRect(x0, 298, w, 2);
+        if (S.lift > 0) { ctx.fillStyle = 'rgba(0,0,0,' + (.3 * S.lift) + ')'; ctx.fillRect(x0, 205, w, 130); ctx.fillStyle = '#c9ced3'; ctx.fillRect(s < 0 ? x0 + w - 3 : x0, 205, 3, 130); }
+      }
+      const house = (x, y, w2, h, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, w2, h); ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(x, y, w2, 7); ctx.fillStyle = '#9fd3e8'; for (let i = 8; i < w2 - 8; i += 16) ctx.fillRect(x + i, y + h - 18, 8, 9); };
+      const cols = ['#b5876b', '#c9b48a', '#9a6a5a', '#b9a58f', '#8f7a6a'];
+      for (let i = 0; i < 5; i++) house(40 + i * 70, 40 + (i % 2) * 6, 62, 70, cols[i % 5]);                      // quayside warehouses and houses
+      for (let i = 0; i < 4; i++) house(40 + i * 80, 380 + (i % 2) * 8, 66, 66, cols[(i + 2) % 5]);
+      for (let i = 0; i < 4; i++) house(600 + i * 90, 380 + (i % 2) * 8, 70, 66, cols[(i + 1) % 5]);
+      signalBox(600, 130, 74, 46, 'BARKLEY BRIDGE');
+    },
+    over() {}
+  },
   tuborne: {
     under() {
       for (const [y, edge] of [[120, 166], [350, 350]]) {
@@ -894,6 +1016,16 @@ function drawFlashing() {
   }
 }
 const CROSSING = {
+  bridge() {
+    // road barriers at each end of the bridge (they swing out across the road) with flashing red lamps
+    const g = S.gate, len = 6 + 50 * g, ph = Math.floor(S.t * 2) % 2;
+    for (const x of [412, 588]) {
+      ctx.fillStyle = '#eee'; ctx.fillRect(x - 3, 268, 6, len);
+      ctx.fillStyle = '#d32'; for (let i = 0; i < len; i += 10) ctx.fillRect(x - 3, 268 + i, 6, Math.min(5, len - i));
+      ctx.fillStyle = '#555'; ctx.fillRect(x - 5, 262, 10, 8);
+      for (const k of [0, 1]) { ctx.fillStyle = S.lights && ph === k ? '#ff3030' : '#3a1010'; ctx.beginPath(); ctx.arc(x - 6 + k * 12, 256, 3.4, 0, 7); ctx.fill(); }
+    }
+  },
   germanbarrier() {
     // four booms (both sides of the line, both halves of the road) rise and fall together; red lamps flash alternately with a St Andrew's cross above them
     const g = S.gate, len = 5 + 25 * g, moving = g > .02, ph = Math.floor(S.t * 2) % 2;
@@ -992,7 +1124,7 @@ function drawCars() {
   const rot = -Math.atan(SC.crossing.skew || 0);
   for (const c of S.cars) {
     if (c.ped) { ctx.fillStyle = css(c.col); ctx.beginPath(); ctx.arc(c.x, c.y, 4, 0, 7); ctx.fill(); ctx.fillStyle = '#f3d2b0'; ctx.beginPath(); ctx.arc(c.x, c.y - 1, 2.5, 0, 7); ctx.fill(); continue; }
-    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.side ? Math.PI / 2 : rot);
+    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.bridge ? (c.dx > 0 ? -Math.PI / 2 : Math.PI / 2) : c.side ? Math.PI / 2 : rot);
     ctx.fillStyle = css(c.col); ctx.fillRect(-7, -11, 14, 22);
     ctx.fillStyle = '#0006'; ctx.fillRect(-5, -5 + (c.dy > 0 ? 3 : -3), 10, 7);
     ctx.fillStyle = '#ffe9a0'; ctx.fillRect(-6, c.dy > 0 ? 9 : -11, 3, 2); ctx.fillRect(3, c.dy > 0 ? 9 : -11, 3, 2);
@@ -1025,7 +1157,8 @@ async function load3D() {
 async function startGame(key) {
   const want3d = (document.querySelector('input[name=mode]:checked') || {}).value === '3d';
   try { localStorage.setItem('sbsMode', want3d ? '3d' : '2d'); } catch (e) {}
-  SC = SCENARIOS[key]; SC.key = key; reset(); S.debug = !!$('debugMode').checked; buildPanel();
+  SC = SCENARIOS[key]; SC.key = key; reset(); S.debug = !!$('debugMode').checked; S.noScore = !!SC.noScore; buildPanel();
+  for (const id of ['score', 'tdelay', 'comp']) $(id).parentElement.style.display = S.noScore ? 'none' : '';      // no scoring here, so no score figures
   try { localStorage.setItem('sbsDebug', S.debug ? '1' : '0'); } catch (e) {}
   $('boxname').textContent = SC.title + (S.debug ? ' (debug)' : '');
   let fell = false;
@@ -1042,8 +1175,8 @@ document.querySelectorAll('.pick').forEach(b => b.onclick = () => startGame(b.da
 let prev = performance.now();
 (function frame(now) { const dt = Math.min(.05, (now - prev) / 1000); prev = now; try { if (S) { update(dt); render(); } } catch (e) { console.error(e); } requestAnimationFrame(frame); })(prev);
 // what the 3D renderer (3d.js) needs from the engine
-window.SBS = { get S() { return S; }, get SC() { return SC; }, $, X3, Z3, ROAD_X, held, keys, toggleLever, accept, cmdBarrier, swingGate, sigById, carsInZone, say };
-try { const q = new URLSearchParams(location.search).get('debug'); if (q === '1' || (q === null && localStorage.getItem('sbsDebug') === '1')) $('debugMode').checked = true; } catch (e) {}
+window.SBS = { get S() { return S; }, get SC() { return SC; }, $, X3, Z3, ROAD_X, held, keys, toggleLever, accept, cmdBarrier, bridgeCmd, swingGate, sigById, carsInZone, say };
+try { const q = new URLSearchParams(location.search).get('debug'); $('debugMode').checked = q === '1' || (q === null && localStorage.getItem('sbsDebug') === '1'); } catch (e) {}
 try { const m = new URLSearchParams(location.search).get('mode') || localStorage.getItem('sbsMode'); if (m === '3d') document.querySelector('input[name=mode][value="3d"]').checked = true; } catch (e) {}
 })();
 </script>

@@ -306,6 +306,87 @@ function consoleControl(sbox, floorY, sx, sz, px, pz, labels, hints) {
     hint(u) { return u.act === 'barrier' ? hints[u.cmd === 'lower' ? 0 : 1] : null; } };
 }
 
+// ---- Barkley Bridge: river, lifting leaves, boats, road barriers -------------------------------------------------------------
+function buildBridgeWorld() {
+  th = 0;
+  const g = new THREE.Mesh(new THREE.PlaneGeometry(800, 800), mat(0x426f36)); g.rotation.x = -Math.PI / 2; g.receiveShadow = true; scene.add(g);
+  box(12, .04, 800, 0x2a6aa0, 0, .03, 0, scene, false);                                              // the river, running north-south
+  for (const s of [-1, 1]) box(.7, .6, 800, 0x8a8478, s * 6.35, .3, 0, scene, false);               // stone banks
+  const zT = Z3(235);
+  for (const s of [-1, 1]) {
+    box(274, .2, 3, 0x7a746a, s * (6.7 + 137), .1, zT, scene, false);                                    // railway either side of the river
+    const sl = new THREE.InstancedMesh(new THREE.BoxGeometry(.3, .12, 2.4), mat(0x4b3a2a), 340), m = new THREE.Matrix4();
+    for (let i = 0; i < 340; i++) { m.setPosition(s * (7 + i * .8), .26, zT); sl.setMatrixAt(i, m); }
+    scene.add(sl);
+    for (const dz of [-.72, .72]) box(274, .16, .1, 0xa5abb1, s * (6.7 + 137), .38, zT + dz, scene, false);
+    box(274, .05, 6, 0x44474c, s * (6.7 + 137), .03, 3.9, scene, false);                                 // the road, either side
+    for (let x = 9; x < 280; x += 4) box(2, .02, .12, 0xdcdccc, s * x, .07, 3.9, scene, false);
+  }
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const trunkG = new THREE.CylinderGeometry(.25, .35, 2, 6), leafG = new THREE.ConeGeometry(1.8, 5, 7);
+  for (let i = 0; i < 90; i++) {
+    const x = (rnd() - .5) * 280, z = (rnd() - .5) * 280;
+    if (Math.abs(x) < 10 || (z > -7 && z < 10) || (x > 8 && x < 20 && z > -15 && z < -5)) continue;
+    const s = .8 + rnd() * .9, tr = new THREE.Group(); tr.position.set(x, 0, z); tr.scale.setScalar(s);
+    const a = new THREE.Mesh(trunkG, mat(0x5b4630)); a.position.y = 1; const b = new THREE.Mesh(leafG, mat(0x2f5d2c)); b.position.y = 4; a.castShadow = b.castShadow = true; tr.add(a, b); scene.add(tr);
+  }
+}
+const bridgeDevice = () => {
+  const hinges = [], arms = [], lamps = [], boatMeshes = new Map();
+  for (const s of [-1, 1]) {
+    const hinge = new THREE.Group(); hinge.position.set(s * 6, .35, 1.0); scene.add(hinge);
+    const L = new THREE.Group(); L.position.x = -s * 3; hinge.add(L);                              // a leaf: 6 wide, reaching in from its hinge at the bank
+    box(6, .4, 13, 0x5b5f66, 0, 0, 0, L);
+    box(6, .2, 3, 0x7a746a, 0, .3, -3.5, L, false);
+    for (let i = -2.6; i <= 2.6; i += .8) box(.3, .12, 2.4, 0x4b3a2a, i, .42, -3.5, L, false);
+    for (const dz of [-.72, .72]) box(6, .16, .1, 0xa5abb1, 0, .56, -3.5 + dz, L, false);
+    box(6, .1, 6, 0x44474c, 0, .25, 2.9, L, false);
+    for (let i = -2.5; i <= 2.6; i += 1.5) box(.8, .02, .12, 0xdcdccc, i, .31, 2.9, L, false);
+    hinges.push({ hinge, s });
+    for (const z of [-5.2, 7.4]) box(1.2, 3.4, 1.2, 0x6d7a86, s * 6.9, 1.7, z);                       // towers at the corners
+  }
+  for (const x of [-8.8, 8.8]) {                                                                   // road barriers at either end, swinging across both lanes
+    const post = new THREE.Group(); post.position.set(x, 0, 7.6); scene.add(post);
+    box(.5, 1.1, .5, 0x555a60, 0, .55, 0, post);
+    const pivot = new THREE.Group(); pivot.position.y = 1.1; post.add(pivot);
+    box(.16, .16, 6.8, 0xf2f2f2, 0, 0, -3.4, pivot); for (let i = 0; i < 6; i++) box(.17, .17, .5, 0xd22a22, 0, 0, -.5 - i * 1.1, pivot, false);
+    const a = sphere(.14, 0x3a1010), b = sphere(.14, 0x3a1010); a.position.set(-.25, 1.7, 0); b.position.set(.25, 1.7, 0); post.add(a, b);
+    arms.push(pivot); lamps.push([a, b]);
+  }
+  return now => {
+    const ang = S.lift * 1.4;
+    for (const o of hinges) o.hinge.rotation.z = -o.s * ang;
+    for (const p of arms) p.rotation.x = (Math.PI / 2) * (1 - S.gate);
+    const ph = Math.floor(now * 2) % 2;
+    for (const [a, b] of lamps) { a.material.color.set(S.lights && ph === 0 ? 0xff3030 : 0x3a1010); b.material.color.set(S.lights && ph === 1 ? 0xff3030 : 0x3a1010); }
+    for (const b of S.boats) {
+      let m = boatMeshes.get(b);
+      if (!m) {
+        m = new THREE.Group(); box(2.4, .8, 5.6, parseInt(b.col.slice(1), 16), 0, .35, 0, m); box(1.6, 1.1, 1.8, 0x2f4a6a, 0, 1.15, -b.dir * 1.2, m);
+        const bow = new THREE.Mesh(new THREE.ConeGeometry(1.2, 1.8, 4), mat(parseInt(b.col.slice(1), 16))); bow.rotation.x = b.dir < 0 ? -Math.PI / 2 : Math.PI / 2; bow.rotation.y = Math.PI / 4; bow.position.set(0, .35, b.dir * 3.6); m.add(bow);
+        scene.add(m); boatMeshes.set(b, m);
+      }
+      m.position.set(0, .05, Z3(b.y));
+    }
+    for (const [b, m] of boatMeshes) if (!S.boats.includes(b)) { scene.remove(m); boatMeshes.delete(b); }
+  };
+};
+function bridgeConsole(sbox, floorY, sx, sz, px, pz) {
+  const ped = new THREE.Group(); ped.position.set(px, floorY, pz); sbox.add(ped);
+  box(2.1, .9, .6, 0x3a3f46, 0, .45, 0, ped);
+  [['close', 0xd22a22, 'BARRIERS DOWN', -.78], ['open', 0x2ecc71, 'BARRIERS UP', -.26], ['lift', 0xe9a21a, 'LIFT', .26], ['lower', 0x2f7bd4, 'LOWER', .78]].forEach(([cmd, col, lab, x]) => {
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(.13, .13, .08, 14), mat(col)); b.position.set(x, .95, .05); ped.add(b);
+    hitbox(new THREE.CylinderGeometry(.22, .22, .3, 12), x, .95, .05, ped, { act: 'bridge', cmd });
+    const p = label(lab.split(' '), .46, .26); p.position.set(x, .915, .24); p.rotation.x = -Math.PI / 2; ped.add(p);
+  });
+  const l1 = sphere(.07, 0x333333), l2 = sphere(.07, 0x333333); l1.position.set(-.5, .92, -.2); l2.position.set(.5, .92, -.2); ped.add(l1, l2);
+  const names = { close: 'Close the road barriers', open: 'Open the road barriers', lift: 'Lift the bridge', lower: 'Lower the bridge' };
+  return { blockers: [{ x: sx + px, z: sz + pz, r: 1.2, y: floorY }],
+    update() { l1.material.color.set(S.gate >= .999 ? 0x30ff70 : 0x333333); l2.material.color.set(S.lift >= 1 ? 0xff3030 : S.lift > 0 ? 0xffb020 : 0x333333); },
+    interact(u) { if (u.act === 'bridge') { A.bridgeCmd(u.cmd); return true; } return false; },
+    hint(u) { return u.act === 'bridge' ? names[u.cmd] : null; } };
+}
+
 // ---- stairs from the east door down to the ground, and walkable ground outside ------------------------------
 function buildStairs(sbox, floorY) {
   const n = Math.round(floorY / .25), run = .5, rise = floorY / n;
@@ -316,6 +397,7 @@ function buildStairs(sbox, floorY) {
   return { x0: 3.7, x1: 3.7 + n * run, y0: floorY };
 }
 function outsideSurfaces(w) {
+  if (w.noCross) return [{ x0: -70, x1: 70, z0: -45, z1: Math.min(...w.tracks.map(Z3)) - 1.8, y: 0 }];
   const zs = w.tracks.map(Z3), zmin = Math.min(...zs), zmax = Math.max(...zs), k = w.skew || 0, hw = (w.roadW || 6) / 2 / Math.cos(Math.atan(k)) + .3;
   const out = [{ x0: -70, x1: 70, z0: -45, z1: zmin - 1.8, y: 0 }];                                            // the ground north of the line
   for (let z = zmin - 1.8; z < zmax + 1.8; z += 1) out.push({ x0: (z + .5) * k - hw, x1: (z + .5) * k + hw, z0: z, z1: z + 1, y: .34 });   // across the line on the crossing
@@ -325,7 +407,7 @@ function outsideSurfaces(w) {
 
 // ---- a standard box for the simpler scenarios: door and stairs on the east side ---------------------------
 function buildSimple(d) {
-  buildWorld(d.world);
+  (d.worldFn || buildWorld)(d.world);
   if (d.scenery) d.scenery();
   const floorY = 3.2, [sx, sz] = d.box, sbox = new THREE.Group(); sbox.position.set(sx, 0, sz); scene.add(sbox);
   const roof = buildRoom(sbox, floorY, true);
@@ -334,13 +416,13 @@ function buildSimple(d) {
   SC.signals.forEach((s, i) => makeInst(sbox, floorY, s, iz[i]));
   const st = buildStairs(sbox, floorY);
   box(1.2, .06, .6, 0x5b3a22, -2.7, floorY + .9, -1.2, sbox); box(.08, .9, .08, 0x5b3a22, -2.7, floorY + .45, -1.2, sbox);
-  const ctl = d.control.type === 'wheel' ? wheelControl(sbox, floorY, sx, sz, d.control.name) : consoleControl(sbox, floorY, sx, sz, 2.2, 1.6, d.control.labels, d.control.hints);
+  const ctl = d.control.type === 'wheel' ? wheelControl(sbox, floorY, sx, sz, d.control.name) : d.control.type === 'bridge' ? bridgeConsole(sbox, floorY, sx, sz, 1.6, 1.6) : consoleControl(sbox, floorY, sx, sz, 2.2, 1.6, d.control.labels, d.control.hints);
   const dev = d.device();
   return { roof, levers, sbox, surfaces: [
       { x0: sx + st.x0, x1: sx + st.x1, z0: sz - .8, z1: sz + .8, y0: st.y0, y1: 0, axis: 'x' },
       { x0: sx - 3.4, x1: sx + 3.3, z0: sz - 2.4, z1: sz + 2.4, y: floorY }, { x0: sx + 3.3, x1: sx + 3.7, z0: sz - .8, z1: sz + .8, y: floorY },
       ...outsideSurfaces(d.world)],
-    blockers: [...ctl.blockers, { x0: sx - 3.9, x1: sx + 3.9, z0: sz - 2.95, z1: sz + 2.95, y: 0 }],
+    blockers: [...ctl.blockers, { x0: sx - 3.9, x1: sx + 3.9, z0: sz - 2.95, z1: sz + 2.95, y: 0 }, ...(d.extraBlockers || [])],
     seat: new THREE.Vector3(sx - 1.8, floorY + 1.65, sz + 1.0), look: new THREE.Vector3(0, 1.0, 0),
     overview: { pos: d.overview || [24, 17, 28], at: [sx * .4, 0, sz * .3] }, start: { x: sx, z: sz + .5, y: floorY },
     update(now) { ctl.update(); dev(now); }, interact: ctl.interact, hint: ctl.hint };
@@ -506,6 +588,15 @@ SIMPLE.warthamhighway = { box: [15.7, -10.7], control: { type: 'console', labels
     box(12, .3, 5, 0xc0392b, -17, 3.4, 15); for (const x of [-21, -13]) box(.3, 3.4, .3, 0x8a8f95, x, 1.7, 15); box(7.6, 2.6, 3.4, 0xe8e2d0, -17, 1.3, 20);
     for (const x of [-20, -17, -14]) box(.6, 1.4, .6, 0xd22a22, x, .7, 15, scene, false);
   } };
+SIMPLE.barkleybridge = { box: [13.7, -9.7], control: { type: 'bridge' }, device: bridgeDevice, worldFn: buildBridgeWorld, overview: [22, 24, 28], world: { tracks: [235], noCross: true },
+  extraBlockers: [{ x0: -6.8, x1: 6.8, z0: -60, z1: 60, y: 0 }],
+  scenery() {   // quayside houses and warehouses
+    const cols = [0xb5876b, 0xc9b48a, 0x9a6a5a, 0xb9a58f, 0x8f7a6a];
+    const house = (x, z, w, d, h, c) => { box(w, h, d, c, x, h / 2, z); const r = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w, d) * .72, 1.8, 4), mat(0x6f3a2a)); r.position.set(x, h + .9, z); r.rotation.y = Math.PI / 4; r.castShadow = true; scene.add(r); };
+    for (let i = 0; i < 5; i++) house(-46 + i * 7 + 3, -17.5, 6.2, 7, 6.5, cols[i % 5]);
+    for (let i = 0; i < 4; i++) house(-46 + i * 8 + 3, 14.5, 6.6, 6.6, 5.6, cols[(i + 2) % 5]);
+    for (let i = 0; i < 4; i++) house(10 + i * 9 + 3.5, 14.5, 7, 6.6, 5.6, cols[(i + 1) % 5]);
+  } };
 SIMPLE.parkside = { box: [9.7, -10.3], control: { type: 'wheel', name: ['BARRIER', 'WHEEL'] }, device: germanBarriers, overview: [36, 24, 36],
   world: { tracks: [210, 260, 310], trees: 0, centre: true },
   scenery() {   // the town: terraces either side, the park to the north-west, station platform and plaza to the south-east
@@ -616,7 +707,7 @@ function frame() {
   for (const c of S.cars) {
     let m = carMeshes.get(c); if (m && !c.ped && m.userData.dy !== c.dy) { scene.remove(m); m = null; }
     if (!m) { m = makeCar(c); carMeshes.set(c, m); }
-    m.position.set(X3(c.x), 0, Z3(c.y)); m.rotation.y = c.side ? -Math.PI / 2 : th; m.userData.haz.visible = c.stall > 0 && Math.floor(now * 3) % 2 === 0;
+    m.position.set(X3(c.x), 0, Z3(c.y)); m.rotation.y = c.bridge ? (c.dx > 0 ? Math.PI / 2 : -Math.PI / 2) : c.side ? -Math.PI / 2 : th; m.userData.haz.visible = c.stall > 0 && Math.floor(now * 3) % 2 === 0;
   }
   for (const [c, m] of carMeshes) if (!S.cars.includes(c)) { scene.remove(m); carMeshes.delete(c); }
   for (const l of B3.levers) { const target = l.id && S.sigOff[l.id] ? .65 : -.15; l.pivot.rotation.x += (target - l.pivot.rotation.x) * Math.min(1, dt * 10); }
