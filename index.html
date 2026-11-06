@@ -79,7 +79,7 @@
 <div id="overlay"><div class="card">
   <h1>Signal Box Simulator</h1>
   <p>Pick a signal box. Keep the trains moving without making the road wait too long.</p>
-  <div class="modeswitch"><label><input type="radio" name="mode" value="2d" checked> 2D top-down</label><label><input type="radio" name="mode" value="3d"> 3D: look out of the box, walk around it</label></div>
+  <div class="modeswitch"><label><input type="radio" name="mode" value="2d" checked> 2D top-down</label><label><input type="radio" name="mode" value="3d"> 3D: look out of the box, walk around it</label><label title="No scoring and no automatic trains: you summon them yourself"><input type="checkbox" id="debugMode"> Debug mode: no scoring, summon trains</label></div>
   <div class="picks">
     <button class="pick" data-box="bailey"><b>Bailey Crossing</b><span>Quiet single line. Wheel-operated gates and two protecting signals. A gentle start.</span></button>
     <button class="pick" data-box="otla"><b>Otla</b><span>Quiet single line with hand-swung gates and no road lights. The signalman has to walk out to swing them.</span></button>
@@ -410,7 +410,7 @@ function checkCollisions() {
   for (const tr of S.trains) {
     const x0 = Math.min(tr.x, trainRear(tr)) - 8, x1 = Math.max(tr.x, trainRear(tr)) + 8;
     for (const c of S.cars) if (!c.hit && Math.abs(c.y - tr.sig.ty) < 16 && c.x > x0 && c.x < x1) {
-      c.hit = true; S.penalties += 200; ding(110, 0, .8, .4); say('COLLISION! A train has hit a vehicle on the crossing! -200', 10);
+      c.hit = true; if (!S.debug) S.penalties += 200; ding(110, 0, .8, .4); say(S.debug ? 'COLLISION! A train has hit a vehicle on the crossing.' : 'COLLISION! A train has hit a vehicle on the crossing! -200', 10);
     }
   }
   if (S.cars.some(c => c.hit)) S.cars = S.cars.filter(c => !c.hit);
@@ -459,12 +459,20 @@ function updateCars(dt) {
   S.cars = S.cars.filter(c => c.y > b0 - 20 && c.y < b1 + 20);
 }
 
+const lineBusy = sig => S.trains.some(t => t.sig.group === sig.group) || SC.signals.some(o => o.group === sig.group && S.inst[o.id] !== 'normal');
+function summon(id) {
+  if (!S.running || !S.debug) return;
+  const sig = sigById(id);
+  if (lineBusy(sig)) { say(sig.name + ' already has a train.', 3); return; }
+  S.inst[id] = 'offered'; S.bellTimer = 0; say(`Debug: ${sig.name} train summoned. Accept it at the block instrument.`, 5);
+}
 function updateOffers(dt) {
   const offered = SC.signals.filter(s => S.inst[s.id] === 'offered');
   if (offered.length) {
     S.bellTimer -= dt; S.trainDelay += dt * offered.length;
     if (S.bellTimer <= 0) { bell(3); S.bellTimer = 6; }
   }
+  if (S.debug) return;                       // debug mode: trains only come when summoned
   S.offerTimer -= dt;
   if (S.offerTimer > 0) return;
   const busy = new Set(S.trains.map(t => t.sig.group));
@@ -481,7 +489,7 @@ function update(dt) {
   if (!S.running) return;
   S.t += dt;
   updateCrossing(dt); updateTrains(dt); updateCars(dt); checkCollisions(); updateOffers(dt);
-  S.score = Math.round(S.trainsDone * 100 - S.trainDelay - S.complaints * 25 - S.penalties);
+  S.score = S.debug ? 0 : Math.round(S.trainsDone * 100 - S.trainDelay - S.complaints * 25 - S.penalties);
   if (S.msgTimer > 0 && (S.msgTimer -= dt) <= 0) $('msg').textContent = S.trains.length ? `${S.trains.length} train(s) on the way.` : 'Line clear. Waiting for the next bell.';
 }
 
@@ -511,7 +519,10 @@ function buildPanel() {
     <div class="lamps"><span class="lamp" id="lampDown">Barriers down</span><span class="lamp" id="lampClear">Crossing clear</span></div>
     <div class="row"><button id="bLower">Lower barriers</button><button id="bRaise">Raise barriers</button></div>
     <div class="gbar"><i id="gfill"></i></div><div class="lock" id="lkG"></div></div>`;
+  if (S.debug) h += `<div class="box" style="grid-column:1/-1"><h3>Debug: summon a train</h3><div class="row" style="margin-top:0;flex-wrap:wrap">` +
+    SC.signals.map(sg => `<button id="sm_${sg.id}">Summon ${sg.name} (${sg.desc})</button>`).join('') + `</div><div class="lock">Debug mode: no scoring, and trains only come when you summon them. A summoned train rings the bell like any other: accept it at the block instrument.</div></div>`;
   $('panel').innerHTML = h;
+  if (S.debug) for (const sg of SC.signals) $('sm_' + sg.id).onclick = () => summon(sg.id);
   for (const s of SC.signals) { $('ac_' + s.id).onclick = () => accept(s.id); $('lv_' + s.id).onclick = () => toggleLever(s.id); }
   if (wheelType) bindHold('bOpen', 'open'), bindHold('bClose', 'close');
   else if (X.type === 'lights') { $('bRed').onclick = () => cmdLights('lower'); $('bGreen').onclick = () => cmdLights('raise'); }
@@ -523,6 +534,7 @@ function bindHold(id, key) {
   b.addEventListener('pointerdown', on); window.addEventListener('pointerup', off); b.addEventListener('pointerleave', off);
 }
 function updatePanel() {
+  if (S.debug) for (const sg of SC.signals) $('sm_' + sg.id).disabled = lineBusy(sg);
   for (const s of SC.signals) {
     const st = S.inst[s.id], el = $('st_' + s.id);
     el.className = 'st ' + st; el.textContent = st === 'normal' ? 'Line blocked' : st === 'offered' ? 'TRAIN OFFERED' : 'Train on line';
@@ -906,7 +918,7 @@ function render() {
     text('← WEST', 10, 470, 12, '#e6e9ec99', 'left'); text('EAST →', W - 10, 470, 12, '#e6e9ec99', 'right');
   }
   updatePanel();
-  $('score').textContent = S.score; $('trains').textContent = S.trainsDone;
+  $('score').textContent = S.debug ? 'debug' : S.score; $('trains').textContent = S.trainsDone;
   $('tdelay').textContent = Math.round(S.trainDelay) + 's'; $('comp').textContent = S.complaints; $('clock').textContent = fmt(S.t);
 }
 
@@ -919,8 +931,9 @@ async function load3D() {
 async function startGame(key) {
   const want3d = (document.querySelector('input[name=mode]:checked') || {}).value === '3d';
   try { localStorage.setItem('sbsMode', want3d ? '3d' : '2d'); } catch (e) {}
-  SC = SCENARIOS[key]; SC.key = key; reset(); buildPanel();
-  $('boxname').textContent = SC.title;
+  SC = SCENARIOS[key]; SC.key = key; reset(); S.debug = !!$('debugMode').checked; buildPanel();
+  try { localStorage.setItem('sbsDebug', S.debug ? '1' : '0'); } catch (e) {}
+  $('boxname').textContent = SC.title + (S.debug ? ' (debug)' : '');
   let fell = false;
   if (want3d) {
     try { await load3D(); R3 = window.SBS3D.start(); cv.style.display = 'none'; $('modes3d').style.display = 'flex'; }
@@ -936,6 +949,7 @@ let prev = performance.now();
 (function frame(now) { const dt = Math.min(.05, (now - prev) / 1000); prev = now; try { if (S) { update(dt); render(); } } catch (e) { console.error(e); } requestAnimationFrame(frame); })(prev);
 // what the 3D renderer (3d.js) needs from the engine
 window.SBS = { get S() { return S; }, get SC() { return SC; }, $, X3, Z3, ROAD_X, held, keys, toggleLever, accept, cmdBarrier, swingGate, sigById, carsInZone, say };
+try { const q = new URLSearchParams(location.search).get('debug'); if (q === '1' || (q === null && localStorage.getItem('sbsDebug') === '1')) $('debugMode').checked = true; } catch (e) {}
 try { const m = new URLSearchParams(location.search).get('mode') || localStorage.getItem('sbsMode'); if (m === '3d') document.querySelector('input[name=mode][value="3d"]').checked = true; } catch (e) {}
 })();
 </script>
