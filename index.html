@@ -855,7 +855,7 @@ function render() {
 const loadScript = src => new Promise((ok, bad) => { const t = document.createElement('script'); t.src = src; t.onload = ok; t.onerror = () => bad(new Error('could not load ' + src)); document.head.appendChild(t); });
 async function load3D() {
   if (!window.THREE) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js');
-  if (!window.SBS3D) await loadScript('3d.js');
+  if (!window.SBS3D) await loadScript('3d.js?t=' + Date.now());      // never reuse a stale cached copy
 }
 async function startGame(key) {
   const want3d = (document.querySelector('input[name=mode]:checked') || {}).value === '3d';
@@ -865,11 +865,11 @@ async function startGame(key) {
   let fell = false;
   if (want3d) {
     try { await load3D(); R3 = window.SBS3D.start(); cv.style.display = 'none'; $('modes3d').style.display = 'flex'; }
-    catch (e) { console.error(e); R3 = null; fell = true; }
+    catch (e) { console.error(e); R3 = null; fell = e.message || 'unknown error'; }
   }
   try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
   $('overlay').style.display = 'none'; S.running = true;
-  say(fell ? '3D could not load, so this is the 2D view. Shift started at ' + SC.title + '.' : 'Shift started at ' + SC.title + '. Wait for the bell.');
+  say(fell ? '3D could not start (' + fell + '), so this is the 2D view. Shift started at ' + SC.title + '.' : 'Shift started at ' + SC.title + '. Wait for the bell.');
 }
 $('change').onclick = () => location.reload();
 document.querySelectorAll('.pick').forEach(b => b.onclick = () => startGame(b.dataset.box));

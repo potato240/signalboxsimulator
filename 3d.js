@@ -571,6 +571,7 @@ function frame() {
 function start() {
   boot(); S = A.S; SC = A.SC; th = 0;
   newScene(); sigLamps = {}; trainMeshes = new Map(); carMeshes = new Map();
+  if (!BUILDERS[SC.key]) throw new Error('no 3D version of ' + SC.title + ' in this copy of 3d.js; refresh the page');
   B3 = BUILDERS[SC.key]();
   for (const s of SC.signals) sigLamps[s.id] = makeSignal(s);
   const d = B3.look.clone().sub(B3.seat); yaw0 = Math.atan2(-d.x, -d.z);
