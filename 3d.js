@@ -48,7 +48,13 @@ function buildWorld(o) {
   const g = new THREE.Mesh(new THREE.PlaneGeometry(800, 800), mat(0x426f36)); g.rotation.x = -Math.PI / 2; g.receiveShadow = true; scene.add(g);
   const [rz0, rz1] = o.roadZ || [-400, 400];
   const road = box(rw, .05, rz1 - rz0, o.roadColor || 0x44474c, 0, .03, (rz0 + rz1) / 2, scene, false); road.rotation.y = a;
-  if (o.centre !== false) for (let z = -300; z < 300; z += 4) if ((z < zmin - 1 || z > zmax + 1) && z > rz0 && z < rz1) { const d = box(.12, .02, 2, 0xdcdccc, z * k, .07, z, scene, false); d.rotation.y = a; }
+  if (o.hwy) for (let z = -300; z < 300; z += 4) if ((z < zmin - 1.5 || z > zmax + 1.5) && z > rz0 && z < rz1) {       // four-lane markings: double yellow, dashed lane lines, white edges
+    for (const dx of [-.14, .14]) box(.1, .02, 4, 0xe8c53a, dx, .07, z, scene, false);
+    if (Math.round(z / 4) % 2 === 0) for (const dx of [-3, 3]) box(.1, .02, 2, 0xdcdccc, dx, .07, z, scene, false);
+    for (const dx of [-5.8, 5.8]) box(.12, .02, 4, 0xdcdccc, dx, .07, z, scene, false);
+    for (const dx of [-6.6, 6.6]) box(.2, .5, 4, 0x9aa0a6, dx, .28, z, scene, false);
+  }
+  if (o.centre !== false && !o.hwy) for (let z = -300; z < 300; z += 4) if ((z < zmin - 1 || z > zmax + 1) && z > rz0 && z < rz1) { const d = box(.12, .02, 2, 0xdcdccc, z * k, .07, z, scene, false); d.rotation.y = a; }
   for (const z of zs) {
     box(560, .2, 3, 0x7a746a, 0, .1, z, scene, false);
     const sl = new THREE.InstancedMesh(new THREE.BoxGeometry(.3, .12, 2.4), mat(0x4b3a2a), 700), m = new THREE.Matrix4();
@@ -491,6 +497,14 @@ SIMPLE.barkleystation = { box: [9.7, -11.7], control: { type: 'console', labels:
     box(4.4, 2.6, 2, 0xa8734e, 30, 2.3, 0); box(5, .5, 2.6, 0x6f3a2a, 30, 3.8, 0);
     for (const x of [18, 22, 38, 42]) box(1.6, .4, .5, 0x6a4a35, x, 1.3, 0);
     for (const z of [-1.6, 1.6]) { const nb = label(['BARKLEY'], 3.2, .7, '#ffffff', '#1f4f9a'); nb.position.set(44, 2.2, z); if (z > 0) nb.rotation.y = Math.PI; scene.add(nb); box(.12, 1.8, .12, 0x444a52, 44, 1.9, z * 1.05); }
+  } };
+SIMPLE.warthamhighway = { box: [15.7, -10.7], control: { type: 'console', labels: ['WIG-WAGS', 'OFF'], hints: ['Start all four wig-wags', 'Stop the wig-wags'] }, device: wigWags, overview: [34, 24, 30],
+  world: { tracks: [260], roadW: 12, hwy: true, trees: 90, deckColor: 0x2f3236, roadColor: 0x3f4247, treeSkip: forestSkip(15.7, -10.7) },
+  scenery() {   // a petrol station, a depot and a retail park beside the highway
+    box(12, 3.4, 6, 0x6d7a86, -27, 1.7, -22); box(12.4, .5, 6.4, 0x56626d, -27, 3.5, -22);
+    box(22, 4.4, 9, 0x6d7a86, 33, 2.2, 17); box(22.4, .5, 9.4, 0x56626d, 33, 4.5, 17); box(13, .05, 9, 0xc9c4b8, 14, .04, 17, scene, false);
+    box(12, .3, 5, 0xc0392b, -17, 3.4, 15); for (const x of [-21, -13]) box(.3, 3.4, .3, 0x8a8f95, x, 1.7, 15); box(7.6, 2.6, 3.4, 0xe8e2d0, -17, 1.3, 20);
+    for (const x of [-20, -17, -14]) box(.6, 1.4, .6, 0xd22a22, x, .7, 15, scene, false);
   } };
 SIMPLE.parkside = { box: [9.7, -10.3], control: { type: 'wheel', name: ['BARRIER', 'WHEEL'] }, device: germanBarriers, overview: [36, 24, 36],
   world: { tracks: [210, 260, 310], trees: 0, centre: true },

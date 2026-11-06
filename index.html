@@ -83,6 +83,7 @@
   <div class="picks">
     <button class="pick" data-box="bailey"><b>Bailey Crossing</b><span>Quiet single line. Wheel-operated gates and two protecting signals. A gentle start.</span></button>
     <button class="pick" data-box="otla"><b>Otla</b><span>Quiet single line with hand-swung gates and no road lights. The signalman has to walk out to swing them.</span></button>
+    <button class="pick" data-box="warthamhighway"><b>Wartham Highway</b><span>A single track across a busy four-lane road, with wig-wags facing each approach. Fast traffic, two lanes each way.</span></button>
     <button class="pick" data-box="barkleystation"><b>Barkley Station</b><span>A town crossing with wig-wags and a side road joining beside it. Two tracks, both calling at an island platform.</span></button>
     <button class="pick" data-box="highbarkley"><b>High Barkley</b><span>Two-track line in hill country. A wig-wag crossing, no gates, and the road meets the line at a sharp angle.</span></button>
     <button class="pick" data-box="parkside"><b>Parkside Plaza Station</b><span>Busy town crossing on a three-track line with a station. German-style barriers on both sides, all four booms worked by one wheel.</span></button>
@@ -95,7 +96,7 @@
   </div>
   <ol>
     <li>The <b>bell</b> rings when a train is offered. <b>Accept</b> it at its block instrument.</li>
-    <li>Close the road: turn the gate wheel (Bailey) or barrier wheel (Straw Lake), trolley gate wheel (Valley Bridge) or barrier wheel (Parkside Plaza), lower the barriers (Tuborne) or switch on the crossing lights (Lee Forest, Fourth Lane Quay Footpath and Brickworks) or start the wig-wags (High Barkley and Barkley Station) or swing the gates by hand (Otla). A stalled vehicle will block this.</li>
+    <li>Close the road: turn the gate wheel (Bailey) or barrier wheel (Straw Lake), trolley gate wheel (Valley Bridge) or barrier wheel (Parkside Plaza), lower the barriers (Tuborne) or switch on the crossing lights (Lee Forest, Fourth Lane Quay Footpath and Brickworks) or start the wig-wags (High Barkley, Barkley Station and Wartham Highway) or swing the gates by hand (Otla). A stalled vehicle will block this.</li>
     <li>Road shut? Pull that train's <b>signal lever</b>. After the train passes, restore the lever and reopen the road.</li>
   </ol>
   <p style="color:var(--dim)">Shortcuts: keys 1&ndash;4 pull levers; &rarr; shuts the road and &larr; opens it at every crossing (wheel, barriers, gates and lights). In 3D, key <b>V</b> cycles Window, Walk (WASD, mouse to look, click levers, instruments and controls) and Overview.</p>
@@ -230,6 +231,21 @@ const SCENARIOS = {
     signals: [
       { id: 'U', name: 'Up line', desc: 'westbound, calls', dir: -1, group: 'U', ty: 225, x: 600, y: 190, vmax: 100, color: 0x2a4d86, station: { front: 700, dwell: 12 } },
       { id: 'D', name: 'Down line', desc: 'eastbound, calls', dir: 1, group: 'D', ty: 295, x: 400, y: 330, vmax: 100, color: 0x2a4d86, station: { front: 900, dwell: 12 } }
+    ]
+  },
+  warthamhighway: {
+    title: 'Wartham Highway', trainLen: 140, offerGap: [45, 85], carGap: [3.5, 8],
+    // a single track across a four-lane road: wig-wags on both verges facing each approach, and fast, heavy traffic
+    crossing: {
+      type: 'lights', style: 'wigwag', bell: true, delay: 0, roadHalf: 60, roadColor: '#3f4247', deckColor: '#2f3236', noCentre: true, laneOffsets: [15, 45], carSpeed: 85, clearance: 78,
+      zone: [220, 300], stopN: 355, stopS: 165, runners: 0,
+      wigs: [[ROAD_X + 80, 175, Math.PI], [ROAD_X - 80, 175, Math.PI], [ROAD_X - 80, 345, 0], [ROAD_X + 80, 345, 0]],
+      ui: { title: 'Wig-wag signals', red: 'Start wig-wags', green: 'Stop wig-wags', lampOff: 'Wig-wags off', lampOn: 'Wig-wags SWINGING', wait: 'Wig-wags starting…', ready: 'Wig-wags swinging — safe to signal',
+            msgOn: 'Wig-wags starting.', msgOff: 'Wig-wags stopped.', note: 'Four wig-wags, two facing each approach, stop all four lanes. Signal a train once they swing and the crossing is clear.' }
+    },
+    signals: [
+      { id: 'W', name: 'West signal', desc: 'eastbound', dir: 1, group: 'T', ty: 260, x: 330, y: 236 },
+      { id: 'E', name: 'East signal', desc: 'westbound', dir: -1, group: 'T', ty: 260, x: 670, y: 284 }
     ]
   }
 };
@@ -438,7 +454,8 @@ function spawnCar(dy) {
     S.cars.push({ ped: true, runner: false, wasBefore: true, x: lane, lane, y, dy, v: 0, wait: 0, flagged: false, col: cols[Math.floor(Math.random() * cols.length)], stall: 0, stallArmed: true });
     return;
   }
-  const q = Math.sqrt(1 + (X.skew || 0) ** 2), lane = dy > 0 ? ROAD_X + 15 * q : ROAD_X - 15 * q;                    // drive on the left
+  const offs = X.laneOffsets || [15], off = offs[Math.floor(Math.random() * offs.length)];
+  const q = Math.sqrt(1 + (X.skew || 0) ** 2), lane = dy > 0 ? ROAD_X + off * q : ROAD_X - off * q;                    // drive on the left
   const cols = [0xc0c8d0, 0xd4553f, 0x3b6fd4, 0xe9c24a, 0x2f2f35, 0x58a36a];
   S.cars.push({ runner: Math.random() < (X.runners || 0), wasBefore: true, x: lane, lane, y, dy, v: 0, wait: 0, flagged: false, col: cols[Math.floor(Math.random() * cols.length)], stall: 0, stallArmed: false });
 }
@@ -469,11 +486,11 @@ function updateCars(dt) {
       continue;
     }
     const front = c.y + c.dy * (c.ped ? 5 : 15), stopY = c.dy < 0 ? X.stopN : X.stopS, before = (front - stopY) * c.dy < 0;
-    const top = c.ped ? 22 : 60; let target = top;
+    const top = c.ped ? 22 : (X.carSpeed || 60); let target = top;
     if (c.stall > 0) { c.stall -= dt; target = 0; }
     else if (before && !open && !c.runner) { const room = (stopY - front) * c.dy; target = room <= 1 ? 0 : Math.min(top, Math.sqrt(2 * 80 * room)); }
     for (const o of S.cars) {
-      if (o === c || o.dy !== c.dy || o.side) continue;
+      if (o === c || o.dy !== c.dy || o.side || o.lane !== c.lane) continue;
       const gap = (o.y - c.y) * c.dy;
       const g1 = c.ped ? 14 : 50, g0 = c.ped ? 10 : 42;
       if (gap > 0 && gap < g1) target = Math.min(target, gap < g0 ? 0 : o.v);
@@ -780,6 +797,27 @@ const SCENERY = {
     over() {
       ctx.fillStyle = 'rgba(61,74,92,.65)'; ctx.fillRect(740, 244, 120, 32);                                         // canopy over the island
     }
+  },
+  warthamhighway: {
+    under() {
+      // road markings (not across the crossing): double yellow centre, dashed lane lines, solid white edges, and crash barriers along the verges
+      const band = y => y > 192 && y < 328;
+      for (let y = 0; y < H; y += 20) {
+        if (band(y) && band(y + 20)) continue;
+        ctx.fillStyle = '#e8c53a'; ctx.fillRect(ROAD_X - 3, y, 2, 20); ctx.fillRect(ROAD_X + 1, y, 2, 20);
+        if (y % 40 === 0) { ctx.fillStyle = '#d8d8c8'; ctx.fillRect(ROAD_X - 31, y, 2, 20); ctx.fillRect(ROAD_X + 29, y, 2, 20); }
+        ctx.fillStyle = '#d8d8c8'; ctx.fillRect(ROAD_X - 58, y, 2, 20); ctx.fillRect(ROAD_X + 56, y, 2, 20);
+        ctx.fillStyle = '#9aa0a6'; ctx.fillRect(ROAD_X - 66, y, 3, 20); ctx.fillRect(ROAD_X + 63, y, 3, 20);
+      }
+      ctx.fillStyle = '#8a8f95'; ctx.fillRect(110, 340, 120, 50); ctx.fillStyle = '#c0392b'; ctx.fillRect(104, 334, 132, 8);     // petrol station
+      ctx.fillStyle = '#e8e2d0'; ctx.fillRect(132, 392, 76, 34); text('FUEL', 170, 414, 10, '#333');
+      ctx.fillStyle = '#6d7a86'; ctx.fillRect(40, 30, 200, 80); ctx.fillStyle = '#56626d'; ctx.fillRect(40, 30, 200, 8); text('WARTHAM LOGISTICS', 140, 76, 10, '#e8eef4');   // depot
+      ctx.fillStyle = '#6d7a86'; ctx.fillRect(700, 340, 220, 90); ctx.fillStyle = '#56626d'; ctx.fillRect(700, 340, 220, 8); text('RETAIL PARK', 810, 392, 10, '#e8eef4');
+      ctx.fillStyle = '#c9c4b8'; ctx.fillRect(560, 340, 130, 90);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.moveTo(566 + i * 22, 346); ctx.lineTo(566 + i * 22, 424); ctx.stroke(); }
+      signalBox(620, 130, 74, 46, 'WARTHAM HIGHWAY');
+    },
+    over() {}
   },
   tuborne: {
     under() {
