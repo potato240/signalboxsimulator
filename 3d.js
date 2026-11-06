@@ -193,6 +193,28 @@ const trolleyGates = () => {
     for (const o of gates) { const pt = (3 - 31 * g) / 10; o.bar.position.x = o.s * 3 + o.s * (pt + 1.9); o.lamp.material.color.set(g >= .999 ? 0xff3030 : blink ? 0xffb020 : 0x553300); }
   };
 };
+const germanBarriers = () => {
+  // four booms, both sides of the line and both halves of the road, rising and falling together; flashing red lamps under a St Andrew's cross
+  const arms = [], lamps = [];
+  for (const zz of [-9, 9]) for (const s of [1, -1]) {
+    const post = new THREE.Group(); post.position.set(-s * 3.4, 0, zz); scene.add(post);
+    box(.4, 1.1, .4, 0x555a60, 0, .55, 0, post);
+    const pivot = new THREE.Group(); pivot.position.y = 1.1; post.add(pivot);
+    box(3.0, .16, .12, 0xf2f2f2, s * 1.5, 0, 0, pivot); for (let i = 0; i < 5; i++) box(.4, .17, .13, 0xd22a22, s * (.3 + i * .6), 0, 0, pivot, false);
+    arms.push({ pivot, s });
+  }
+  for (const [x, z, d] of [[-4.6, -14.8, -1], [4.6, -14.8, -1], [-4.6, 14.8, 1], [4.6, 14.8, 1]]) {
+    box(.14, 3.4, .14, 0x4a4f56, x, 1.7, z);
+    for (const a of [Math.PI / 4, -Math.PI / 4]) { const r = box(1.0, .2, .04, 0xd22a22, x, 3.9, z, scene, false); r.rotation.z = a; const w = box(.9, .1, .05, 0xffffff, x, 3.9, z + d * .02, scene, false); w.rotation.z = a; }
+    box(.9, .4, .12, 0x111111, x, 3.2, z);
+    const a = sphere(.13, 0x3a1010), b = sphere(.13, 0x3a1010); a.position.set(x - .22, 3.2, z + d * .09); b.position.set(x + .22, 3.2, z + d * .09); scene.add(a, b); lamps.push([a, b]);
+  }
+  return now => {
+    for (const a of arms) a.pivot.rotation.z = a.s * (Math.PI / 2) * (1 - S.gate);
+    const ph = Math.floor(now * 2) % 2, on = S.gate > .02;
+    for (const [a, b] of lamps) { a.material.color.set(on && ph === 0 ? 0xff3030 : 0x3a1010); b.material.color.set(on && ph === 1 ? 0xff3030 : 0x3a1010); }
+  };
+};
 const mwlLights = () => {
   const heads = [];
   for (const [x, z, d] of [[3.8, -5.5, -1], [-3.8, -5.5, -1], [-3.8, 5.5, 1], [3.8, 5.5, 1]]) {
@@ -273,7 +295,8 @@ function buildSimple(d) {
   const floorY = 3.2, [sx, sz] = d.box, sbox = new THREE.Group(); sbox.position.set(sx, 0, sz); scene.add(sbox);
   const roof = buildRoom(sbox, floorY, true);
   const levers = buildLevers(sbox, floorY);
-  SC.signals.forEach((s, i) => makeInst(sbox, floorY, s, i ? 1.7 : -1.7));
+  const iz = SC.signals.length === 3 ? [-2.0, -1.25, 1.7] : [-1.7, 1.7];
+  SC.signals.forEach((s, i) => makeInst(sbox, floorY, s, iz[i]));
   const st = buildStairs(sbox, floorY);
   box(1.2, .06, .6, 0x5b3a22, -2.7, floorY + .9, -1.2, sbox); box(.08, .9, .08, 0x5b3a22, -2.7, floorY + .45, -1.2, sbox);
   const ctl = d.control.type === 'wheel' ? wheelControl(sbox, floorY, sx, sz, d.control.name) : consoleControl(sbox, floorY, sx, sz, 2.2, 1.6, d.control.labels, d.control.hints);
@@ -414,6 +437,21 @@ function buildOtla() {
     hint(u) { return u.act === 'gate' ? `${u.side === 'n' ? 'North' : 'South'} gates: click to swing ${S.gateTarget[u.side] ? 'open' : 'shut'}` : null; } };
 }
 
+SIMPLE.parkside = { box: [9.7, -10.3], control: { type: 'wheel', name: ['BARRIER', 'WHEEL'] }, device: germanBarriers, overview: [36, 24, 36],
+  world: { tracks: [210, 260, 310], trees: 0, centre: true },
+  scenery() {   // the town: terraces either side, the park to the north-west, station platform and plaza to the south-east
+    const cols = [0xb5876b, 0xc9b48a, 0x9a6a5a, 0xb9a58f, 0x8f7a6a];
+    const house = (x, z, w, d, h, c) => { box(w, h, d, c, x, h / 2, z); const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w, d) * .72, 1.8, 4), mat(0x6f3a2a)); roof.position.set(x, h + .9, z); roof.rotation.y = Math.PI / 4; roof.castShadow = true; scene.add(roof); };
+    for (let i = 0; i < 7; i++) house(6 + i * 5.8 + 2.6, -20, 5.2, 7, 6 + (i % 3) * .8, cols[i % 5]);
+    for (let i = 0; i < 7; i++) house(-46 + i * 5.8 + 2.6, 17.5, 5.2, 6.6, 5.5, cols[(i + 2) % 5]);
+    box(36, .06, 15, 0x4f7a3f, -21, .04, -15.5, scene, false);
+    const pond = new THREE.Mesh(new THREE.CylinderGeometry(7, 7, .08, 24), mat(0x2f6aa0)); pond.position.set(-29, .08, -16.5); pond.scale.z = .45; scene.add(pond);
+    const trunk = new THREE.CylinderGeometry(.25, .35, 2, 6), leaf = new THREE.ConeGeometry(1.8, 5, 7);
+    for (let i = 0; i < 12; i++) { const x = -38 + (i * 37) % 34, z = -22 + (i * 53) % 10; if (Math.hypot((x + 29) / 8.5, (z + 16.5) / 4) < 1) continue; const g = new THREE.Group(); g.position.set(x, 0, z); const a = new THREE.Mesh(trunk, mat(0x5b4630)); a.position.y = 1; const b = new THREE.Mesh(leaf, mat(0x2f5d2c)); b.position.y = 4; a.castShadow = b.castShadow = true; g.add(a, b); scene.add(g); }
+    box(29, 1, 3, 0xb9b4a8, 29.5, .5, 8.5); box(29, .02, .35, 0xe8c53a, 29.5, 1.01, 7.2, scene, false);
+    box(12, 4.4, 4.4, 0xa8734e, 21, 2.2, 14.5); box(13.2, .9, 5.6, 0x6f3a2a, 21, 4.8, 14.5);
+    box(26, .06, 5, 0xc9c4b8, 19, .04, 22.5, scene, false); const fo = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.6, .5, 14), mat(0x4f93c9)); fo.position.set(19, .3, 22.5); scene.add(fo);
+  } };
 const BUILDERS = { tuborne: buildTuborne, otla: buildOtla };
 for (const k in SIMPLE) BUILDERS[k] = () => buildSimple(SIMPLE[k]);
 

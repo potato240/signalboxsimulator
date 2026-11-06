@@ -83,6 +83,7 @@
   <div class="picks">
     <button class="pick" data-box="bailey"><b>Bailey Crossing</b><span>Quiet single line. Wheel-operated gates and two protecting signals. A gentle start.</span></button>
     <button class="pick" data-box="otla"><b>Otla</b><span>Quiet single line with hand-swung gates and no road lights. The signalman has to walk out to swing them.</span></button>
+    <button class="pick" data-box="parkside"><b>Parkside Plaza Station</b><span>Busy town crossing on a three-track line with a station. German-style barriers on both sides, all four booms worked by one wheel.</span></button>
     <button class="pick" data-box="valleybridge"><b>Valley Bridge</b><span>Two-track line over a road by a river valley. One wheel rolls out four trolley gates at once.</span></button>
     <button class="pick" data-box="quayfootpath"><b>Fourth Lane Quay Footpath</b><span>A footpath to the quay crosses the line. A red light on each side stops the walkers.</span></button>
     <button class="pick" data-box="brickworks"><b>Fourth Lane Brickworks</b><span>An open crossing with no gates: a pair of flashing lights each side stops the works traffic.</span></button>
@@ -92,7 +93,7 @@
   </div>
   <ol>
     <li>The <b>bell</b> rings when a train is offered. <b>Accept</b> it at its block instrument.</li>
-    <li>Close the road: turn the gate wheel (Bailey) or barrier wheel (Straw Lake), trolley gate wheel (Valley Bridge), lower the barriers (Tuborne) or switch on the crossing lights (Lee Forest, Fourth Lane Quay Footpath and Brickworks) or swing the gates by hand (Otla). A stalled vehicle will block this.</li>
+    <li>Close the road: turn the gate wheel (Bailey) or barrier wheel (Straw Lake), trolley gate wheel (Valley Bridge) or barrier wheel (Parkside Plaza), lower the barriers (Tuborne) or switch on the crossing lights (Lee Forest, Fourth Lane Quay Footpath and Brickworks) or swing the gates by hand (Otla). A stalled vehicle will block this.</li>
     <li>Road shut? Pull that train's <b>signal lever</b>. After the train passes, restore the lever and reopen the road.</li>
   </ol>
   <p style="color:var(--dim)">Shortcuts: keys 1&ndash;4 pull levers; &rarr; shuts the road and &larr; opens it at every crossing (wheel, barriers, gates and lights). In 3D, key <b>V</b> cycles Window, Walk (WASD, mouse to look, click levers, instruments and controls) and Overview.</p>
@@ -189,6 +190,16 @@ const SCENARIOS = {
     signals: [
       { id: 'U', name: 'Up line', desc: 'westbound', dir: -1, group: 'U', ty: 235, x: 620, y: 256 },
       { id: 'D', name: 'Down line', desc: 'eastbound', dir: 1, group: 'D', ty: 285, x: 380, y: 264 }
+    ]
+  },
+  parkside: {
+    title: 'Parkside Plaza Station', trainLen: 140, offerGap: [35, 65], carGap: [5, 11],
+    // German-style double barriers in a town: four booms (both sides, both lanes) driven together by one wheel, with a bell and red lights
+    crossing: { type: 'wheel', style: 'germanbarrier', barriers: true, bell: true, wheelName: 'Barrier wheel', zone: [180, 340], stopN: 372, stopS: 148 },
+    signals: [
+      { id: 'U', name: 'Up Main', desc: 'westbound', dir: -1, group: 'U', ty: 210, x: 620, y: 231 },
+      { id: 'D', name: 'Down Main', desc: 'eastbound', dir: 1, group: 'D', ty: 260, x: 380, y: 239, vmax: 120 },
+      { id: 'P', name: 'Platform line', desc: 'eastbound, calls', dir: 1, group: 'P', ty: 310, x: 380, y: 289, vmax: 100, color: 0x2a4d86, station: { front: 900, dwell: 12 } }
     ]
   }
 };
@@ -326,6 +337,7 @@ function updateCrossing(dt) {
     let g = S.gate + d * 0.1 * dt;
     if (d > 0 && carsInZone().length) { g = Math.min(g, 0.9); lk.textContent = 'Crossing obstructed — vehicle in the way'; } else lk.textContent = 'Turning…';
     S.gate = Math.max(0, Math.min(1, g)); if (S.gate > 0.9995) S.gate = 1;
+    if (SC.crossing.bell && S.gate > .01 && S.gate < .999) { S.beepT -= dt; if (S.beepT <= 0) { ding(1700, 0, .06, .1); ding(1300, .1, .06, .1); S.beepT = .5; } }
     return;
   }
   if (S.cmd === 'lower') {
@@ -639,6 +651,27 @@ const SCENERY = {
     },
     over() {}
   },
+  parkside: {
+    under() {
+      ctx.fillStyle = '#4f7a3f'; ctx.fillRect(30, 18, 360, 150);                                              // the park
+      ctx.fillStyle = '#2f6aa0'; ctx.beginPath(); ctx.ellipse(210, 95, 70, 30, 0, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#d8cfa8'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(30, 138); ctx.quadraticCurveTo(210, 175, 390, 130); ctx.stroke();
+      let seed = 5; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+      for (let i = 0; i < 26; i++) { const x = 40 + rnd() * 340, y = 28 + rnd() * 110; if (((x - 210) / 82) ** 2 + ((y - 95) / 42) ** 2 < 1) continue; ctx.fillStyle = '#1f3d1e'; ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.fill(); ctx.fillStyle = '#2f5d2c'; ctx.beginPath(); ctx.arc(x - 2, y - 2, 6, 0, 7); ctx.fill(); }
+      const house = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(x, y, w, 7); ctx.fillStyle = '#9fd3e8'; for (let i = 8; i < w - 8; i += 16) ctx.fillRect(x + i, y + h - 18, 8, 9); };
+      const cols = ['#b5876b', '#c9b48a', '#9a6a5a', '#b9a58f', '#8f7a6a'];
+      for (let i = 0; i < 7; i++) house(560 + i * 58, 22, 52, 70 + (i % 3) * 8, cols[i % 5]);                    // terrace north-east
+      for (let i = 0; i < 7; i++) house(36 + i * 58, 396 + (i % 2) * 6, 52, 66, cols[(i + 2) % 5]);                // terrace south-west
+      ctx.fillStyle = '#b9b4a8'; ctx.fillRect(650, 330, 290, 30); ctx.fillStyle = '#e8c53a'; ctx.fillRect(650, 330, 290, 4);   // platform
+      ctx.fillStyle = '#a8734e'; ctx.fillRect(650, 368, 120, 44); ctx.fillStyle = '#6f3a2a'; ctx.fillRect(644, 362, 132, 9);
+      text('PARKSIDE PLAZA', 710, 396, 9, '#fff');
+      ctx.fillStyle = '#c9c4b8'; ctx.fillRect(560, 420, 260, 50); ctx.strokeStyle = '#b3ae9f'; ctx.lineWidth = 1;
+      for (let x = 560; x <= 820; x += 26) { ctx.beginPath(); ctx.moveTo(x, 420); ctx.lineTo(x, 470); ctx.stroke(); }
+      ctx.fillStyle = '#4f93c9'; ctx.beginPath(); ctx.arc(690, 445, 14, 0, 7); ctx.fill();                      // fountain on the plaza
+      signalBox(560, 122, 74, 46, 'PARKSIDE PLAZA');
+    },
+    over() {}
+  },
   tuborne: {
     under() {
       for (const [y, edge] of [[120, 166], [350, 350]]) {
@@ -697,6 +730,23 @@ function drawFlashing() {
   }
 }
 const CROSSING = {
+  germanbarrier() {
+    // four booms (both sides of the line, both halves of the road) rise and fall together; red lamps flash alternately with a St Andrew's cross above them
+    const g = S.gate, len = 5 + 25 * g, moving = g > .02, ph = Math.floor(S.t * 2) % 2;
+    for (const [px, py, s] of [[466, 170, 1], [534, 170, -1], [466, 350, 1], [534, 350, -1]]) {
+      const x0 = s > 0 ? px : px - len;
+      ctx.fillStyle = '#eee'; ctx.fillRect(x0, py - 3, len, 6);
+      ctx.fillStyle = '#d32'; for (let i = 0; i < len; i += 10) { const w = Math.min(5, len - i); ctx.fillRect(s > 0 ? px + i : px - i - w, py - 3, w, 6); }
+      ctx.fillStyle = '#555'; ctx.fillRect(px - 4, py - 6, 8, 12);
+    }
+    for (const [x, y] of [[ROAD_X - 46, 148], [ROAD_X + 46, 148], [ROAD_X - 46, 372], [ROAD_X + 46, 372]]) {
+      ctx.fillStyle = '#4a4f56'; ctx.fillRect(x - 1.5, y - 2, 3, 18);
+      ctx.strokeStyle = '#d32'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(x - 7, y - 20); ctx.lineTo(x + 7, y - 6); ctx.moveTo(x + 7, y - 20); ctx.lineTo(x - 7, y - 6); ctx.stroke();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();                                          // the cross
+      ctx.fillStyle = '#111'; ctx.fillRect(x - 8, y - 4, 16, 8);
+      for (const k of [0, 1]) { const lit = moving && ph === k; ctx.fillStyle = lit ? '#ff3030' : '#3a1010'; ctx.beginPath(); ctx.arc(x + (k ? 4 : -4), y, 2.6, 0, 7); ctx.fill(); }
+    }
+  },
   trolley() {
     // four trolley gates: each long bar slides through a box at the road edge; open, it pokes out of the back of the box
     const g = S.gate, moving = g > .02 && g < .999, blink = Math.floor(S.t * 3) % 2, L = 28;
