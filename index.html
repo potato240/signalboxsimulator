@@ -83,6 +83,7 @@
   <div class="picks">
     <button class="pick" data-box="bailey"><b>Bailey Crossing</b><span>Quiet single line. Wheel-operated gates and two protecting signals. A gentle start.</span></button>
     <button class="pick" data-box="otla"><b>Otla</b><span>Quiet single line with hand-swung gates and no road lights. The signalman has to walk out to swing them.</span></button>
+    <button class="pick" data-box="barkleystation"><b>Barkley Station</b><span>A town crossing with wig-wags and a side road joining beside it. Two tracks, both calling at an island platform.</span></button>
     <button class="pick" data-box="highbarkley"><b>High Barkley</b><span>Two-track line in hill country. A wig-wag crossing, no gates, and the road meets the line at a sharp angle.</span></button>
     <button class="pick" data-box="parkside"><b>Parkside Plaza Station</b><span>Busy town crossing on a three-track line with a station. German-style barriers on both sides, all four booms worked by one wheel.</span></button>
     <button class="pick" data-box="valleybridge"><b>Valley Bridge</b><span>Two-track line over a road by a river valley. One wheel rolls out four trolley gates at once.</span></button>
@@ -94,7 +95,7 @@
   </div>
   <ol>
     <li>The <b>bell</b> rings when a train is offered. <b>Accept</b> it at its block instrument.</li>
-    <li>Close the road: turn the gate wheel (Bailey) or barrier wheel (Straw Lake), trolley gate wheel (Valley Bridge) or barrier wheel (Parkside Plaza), lower the barriers (Tuborne) or switch on the crossing lights (Lee Forest, Fourth Lane Quay Footpath and Brickworks) or start the wig-wags (High Barkley) or swing the gates by hand (Otla). A stalled vehicle will block this.</li>
+    <li>Close the road: turn the gate wheel (Bailey) or barrier wheel (Straw Lake), trolley gate wheel (Valley Bridge) or barrier wheel (Parkside Plaza), lower the barriers (Tuborne) or switch on the crossing lights (Lee Forest, Fourth Lane Quay Footpath and Brickworks) or start the wig-wags (High Barkley and Barkley Station) or swing the gates by hand (Otla). A stalled vehicle will block this.</li>
     <li>Road shut? Pull that train's <b>signal lever</b>. After the train passes, restore the lever and reopen the road.</li>
   </ol>
   <p style="color:var(--dim)">Shortcuts: keys 1&ndash;4 pull levers; &rarr; shuts the road and &larr; opens it at every crossing (wheel, barriers, gates and lights). In 3D, key <b>V</b> cycles Window, Walk (WASD, mouse to look, click levers, instruments and controls) and Overview.</p>
@@ -214,6 +215,21 @@ const SCENARIOS = {
     signals: [
       { id: 'U', name: 'Up line', desc: 'westbound', dir: -1, group: 'U', ty: 235, x: 650, y: 256 },
       { id: 'D', name: 'Down line', desc: 'eastbound', dir: 1, group: 'D', ty: 285, x: 350, y: 264 }
+    ]
+  },
+  barkleystation: {
+    title: 'Barkley Station', trainLen: 140, offerGap: [45, 80], carGap: [6, 13],
+    // wig-wag crossing in a town, with a side road joining just south of it that has its own wig-wag; two tracks, both calling at an island platform
+    crossing: {
+      type: 'lights', style: 'wigwag', bell: true, delay: 0, zone: [190, 330], stopN: 350, stopS: 170, runners: 0,
+      wigs: [[ROAD_X + 50, 170, Math.PI], [ROAD_X - 50, 350, 0], [612, 420, Math.PI / 2]],                 // x, y (sim px), and the way each faces in 3D
+      side: { y: 385, spawnX: 1020, stopX: 650, gap: [9, 17] },
+      ui: { title: 'Wig-wag signals', red: 'Start wig-wags', green: 'Stop wig-wags', lampOff: 'Wig-wags off', lampOn: 'Wig-wags SWINGING', wait: 'Wig-wags starting…', ready: 'Wig-wags swinging — safe to signal',
+            msgOn: 'Wig-wags starting.', msgOff: 'Wig-wags stopped.', note: 'One switch works all three wig-wags: the two on the main road and the one on the side road. Signal a train once they swing and the crossing is clear.' }
+    },
+    signals: [
+      { id: 'U', name: 'Up line', desc: 'westbound, calls', dir: -1, group: 'U', ty: 225, x: 600, y: 190, vmax: 100, color: 0x2a4d86, station: { front: 700, dwell: 12 } },
+      { id: 'D', name: 'Down line', desc: 'eastbound, calls', dir: 1, group: 'D', ty: 295, x: 400, y: 330, vmax: 100, color: 0x2a4d86, station: { front: 900, dwell: 12 } }
     ]
   }
 };
@@ -433,13 +449,31 @@ function updateCars(dt) {
     if (S.carTimer[key] <= 0) { S.carTimer[key] = rand(SC.carGap); spawnCar(key === 's' ? 1 : -1); }
   }
   const open = roadOpen();
+  if (X.side) {                                   // traffic joining from the side road, stopped by its own wig-wag
+    S.sideTimer = (S.sideTimer === undefined ? 3 : S.sideTimer) - dt;
+    if (S.sideTimer <= 0) {
+      S.sideTimer = rand(X.side.gap);
+      const cols = [0xc0c8d0, 0xd4553f, 0x3b6fd4, 0xe9c24a, 0x2f2f35, 0x58a36a];
+      S.cars.push({ side: true, turn: Math.random() < .65 ? 'N' : 'S', runner: false, wasBefore: true, x: X.side.spawnX, lane: ROAD_X, y: X.side.y + 10, dy: 1, v: 0, wait: 0, flagged: false, col: cols[Math.floor(Math.random() * cols.length)], stall: 0, stallArmed: true });
+    }
+  }
   for (const c of S.cars) {
+    if (c.side) {                                 // heading west along the side road
+      const fr = c.x - 15; let target = 60;
+      if (!open && fr > X.side.stopX) { const room = fr - X.side.stopX; target = room <= 1 ? 0 : Math.min(60, Math.sqrt(2 * 80 * room)); }
+      for (const o of S.cars) { if (o === c || !o.side) continue; const gap = c.x - o.x; if (gap > 0 && gap < 50) target = Math.min(target, gap < 42 ? 0 : o.v); }
+      c.v += Math.max(-200 * dt, Math.min(60 * dt, target - c.v)); c.x -= c.v * dt;
+      if (c.v < 1) { c.wait += dt; if (c.wait > 45 && !c.flagged) { c.flagged = true; S.complaints++; } }
+      const laneX = c.turn === 'N' ? ROAD_X - 15 : ROAD_X + 15;
+      if (c.x <= laneX) { c.x = laneX; c.lane = laneX; c.side = false; c.dy = c.turn === 'N' ? -1 : 1; c.v = Math.min(c.v, 30); c.wasBefore = true; }   // turn onto the main road
+      continue;
+    }
     const front = c.y + c.dy * (c.ped ? 5 : 15), stopY = c.dy < 0 ? X.stopN : X.stopS, before = (front - stopY) * c.dy < 0;
     const top = c.ped ? 22 : 60; let target = top;
     if (c.stall > 0) { c.stall -= dt; target = 0; }
     else if (before && !open && !c.runner) { const room = (stopY - front) * c.dy; target = room <= 1 ? 0 : Math.min(top, Math.sqrt(2 * 80 * room)); }
     for (const o of S.cars) {
-      if (o === c || o.dy !== c.dy) continue;
+      if (o === c || o.dy !== c.dy || o.side) continue;
       const gap = (o.y - c.y) * c.dy;
       const g1 = c.ped ? 14 : 50, g0 = c.ped ? 10 : 42;
       if (gap > 0 && gap < g1) target = Math.min(target, gap < g0 ? 0 : o.v);
@@ -725,6 +759,28 @@ const SCENERY = {
     },
     over() {}
   },
+  barkleystation: {
+    under() {
+      ctx.fillStyle = '#4a4d52'; ctx.fillRect(500, 365, 520, 40);                                              // the side road
+      ctx.setLineDash([16, 14]); ctx.strokeStyle = '#d8d8c8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(530, 385); ctx.lineTo(1020, 385); ctx.stroke(); ctx.setLineDash([]);
+      const house = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(x, y, w, 7); ctx.fillStyle = '#9fd3e8'; for (let i = 8; i < w - 8; i += 16) ctx.fillRect(x + i, y + h - 18, 8, 9); };
+      const cols = ['#b5876b', '#c9b48a', '#9a6a5a', '#b9a58f', '#8f7a6a'];
+      for (let i = 0; i < 7; i++) house(36 + i * 58, 28, 52, 70 + (i % 3) * 8, cols[i % 5]);                       // terraces: north-west
+      for (let i = 0; i < 6; i++) house(560 + i * 62, 24, 56, 72 + (i % 2) * 8, cols[(i + 1) % 5]);                  // north-east
+      for (let i = 0; i < 7; i++) house(36 + i * 58, 400 + (i % 2) * 6, 52, 64, cols[(i + 3) % 5]);                  // south-west
+      for (let i = 0; i < 6; i++) house(560 + i * 62, 424 + (i % 2) * 6, 56, 46, cols[(i + 2) % 5]);                  // south of the side road
+      for (let i = 0; i < 5; i++) house(540 + i * 80, 310, 64, 44, cols[(i + 4) % 5]);                                // shops between the line and the side road
+      ctx.fillStyle = '#b9b4a8'; ctx.fillRect(640, 242, 320, 36);                                                    // island platform
+      ctx.fillStyle = '#e8c53a'; ctx.fillRect(640, 242, 320, 3); ctx.fillRect(640, 275, 320, 3);
+      ctx.fillStyle = '#a8734e'; ctx.fillRect(770, 252, 60, 16); ctx.fillStyle = '#6f3a2a'; ctx.fillRect(766, 249, 68, 5);
+      ctx.fillStyle = '#6a4a35'; for (const x of [670, 700, 880, 910]) ctx.fillRect(x, 258, 16, 5);
+      ctx.fillStyle = '#1f4f9a'; ctx.fillRect(920, 253, 34, 14); text('BARKLEY', 937, 263, 8, '#fff');
+      signalBox(560, 120, 74, 46, 'BARKLEY STATION');
+    },
+    over() {
+      ctx.fillStyle = 'rgba(61,74,92,.65)'; ctx.fillRect(740, 244, 120, 32);                                         // canopy over the island
+    }
+  },
   tuborne: {
     under() {
       for (const [y, edge] of [[120, 166], [350, 350]]) {
@@ -766,7 +822,7 @@ function drawWigWag() {
   // a wig-wag as in the photo: post, grey mechanism box, and an arm that swings about the box, carrying a white disc with a black cross and a red lamp, balanced by a counterweight
   const k = SC.crossing.skew || 0, half = 30 * Math.sqrt(1 + k * k), rx = y => ROAD_X + (y - TRACK_Y) * k;
   const sw = Math.sin(S.wigPhase || 0) * (S.wigAmp || 0) * .75;
-  for (const [x, y] of [[rx(185) + half + 26, 185], [rx(335) - half - 26, 335]]) {
+  for (const [x, y] of (SC.crossing.wigs ? SC.crossing.wigs.map(w => [w[0], w[1]]) : [[rx(185) + half + 26, 185], [rx(335) - half - 26, 335]])) {
     ctx.fillStyle = '#cfd3d6'; ctx.fillRect(x - 3, y - 6, 6, 28); ctx.fillStyle = '#aab0b6'; ctx.fillRect(x - 5, y + 20, 10, 3);                // post and its foot
     ctx.fillStyle = '#9aa0a6'; ctx.fillRect(x - 8, y - 20, 16, 17); ctx.strokeStyle = '#6a7076'; ctx.strokeRect(x - 8, y - 20, 16, 17);   // mechanism box
     ctx.save(); ctx.translate(x, y - 12); ctx.rotate(sw);
@@ -898,7 +954,7 @@ function drawCars() {
   const rot = -Math.atan(SC.crossing.skew || 0);
   for (const c of S.cars) {
     if (c.ped) { ctx.fillStyle = css(c.col); ctx.beginPath(); ctx.arc(c.x, c.y, 4, 0, 7); ctx.fill(); ctx.fillStyle = '#f3d2b0'; ctx.beginPath(); ctx.arc(c.x, c.y - 1, 2.5, 0, 7); ctx.fill(); continue; }
-    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(rot);
+    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.side ? Math.PI / 2 : rot);
     ctx.fillStyle = css(c.col); ctx.fillRect(-7, -11, 14, 22);
     ctx.fillStyle = '#0006'; ctx.fillRect(-5, -5 + (c.dy > 0 ? 3 : -3), 10, 7);
     ctx.fillStyle = '#ffe9a0'; ctx.fillRect(-6, c.dy > 0 ? 9 : -11, 3, 2); ctx.fillRect(3, c.dy > 0 ? 9 : -11, 3, 2);

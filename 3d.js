@@ -151,7 +151,7 @@ function makeCar(c) {
   }
   box(1.5, .6, 3, c.col, 0, .65, 0, g); box(1.3, .55, 1.5, 0x20262c, 0, 1.2, -c.dy * .15, g);
   for (const s of [-1, 1]) { const h = new THREE.Mesh(new THREE.BoxGeometry(.28, .2, .08), glow(0xffeeaa)); h.position.set(s * .5, .7, c.dy * 1.5); g.add(h); }
-  const haz = new THREE.Mesh(new THREE.BoxGeometry(1.6, .15, .1), glow(0xffa020)); haz.position.set(0, .8, -c.dy * 1.5); haz.visible = false; g.add(haz); g.userData.haz = haz;
+  const haz = new THREE.Mesh(new THREE.BoxGeometry(1.6, .15, .1), glow(0xffa020)); haz.position.set(0, .8, -c.dy * 1.5); haz.visible = false; g.add(haz); g.userData.haz = haz; g.userData.dy = c.dy;
   scene.add(g); return g;
 }
 
@@ -222,10 +222,11 @@ const germanBarriers = () => {
 };
 const wigWags = () => {
   // a wig-wag as in the photo: a white post, a grey mechanism box, and a long arm swinging about the box with a white disc (black cross, red lamp) on top and a counterweight below
-  const k = SC.crossing.skew, a = Math.atan(k), half = 30 * Math.sqrt(1 + k * k), items = [];
+  const k = SC.crossing.skew || 0, a = Math.atan(k), half = 30 * Math.sqrt(1 + k * k), items = [];
   const grey = 0x9aa0a6, silver = 0xcfd3d6;
-  for (const [by, sgn] of [[185, 1], [335, -1]]) {
-    const g = new THREE.Group(); g.position.set(((by - 260) * k + sgn * (half + 26)) * U, 0, Z3(by)); g.rotation.y = by < 260 ? a + Math.PI : a; g.scale.setScalar(.62); scene.add(g);   // turned square to the road, facing its traffic; a compact size
+  const spots = SC.crossing.wigs ? SC.crossing.wigs.map(([px, py, ry]) => ({ x: (px - ROAD_X) * U, z: Z3(py), ry })) : [[185, 1], [335, -1]].map(([by, sgn]) => ({ x: ((by - 260) * k + sgn * (half + 26)) * U, z: Z3(by), ry: by < 260 ? a + Math.PI : a }));
+  for (const sp of spots) {
+    const g = new THREE.Group(); g.position.set(sp.x, 0, sp.z); g.rotation.y = sp.ry; g.scale.setScalar(.62); scene.add(g);   // turned square to the road, facing its traffic; a compact size
     const foot = new THREE.Mesh(new THREE.CylinderGeometry(.3, .34, .18, 14), mat(0xaab0b6)); foot.position.y = .09; foot.castShadow = true; g.add(foot);
     const mast = new THREE.Mesh(new THREE.CylinderGeometry(.14, .17, 2.9, 12), mat(silver)); mast.position.y = 1.55; mast.castShadow = true; g.add(mast);
     box(1.0, 1.25, .5, grey, 0, 3.4, 0, g); box(.7, .35, .06, 0x6a7076, 0, 3.6, .27, g, false);
@@ -473,6 +474,24 @@ SIMPLE.highbarkley = { box: [13.7, -9.7], control: { type: 'console', labels: ['
     box(3.4, 4.4, 5, 0x9b958a, -14, 2.2, 15); box(2.2, 2.6, 2.2, 0x8a8478, -14, 5.7, 14); const sp = new THREE.Mesh(new THREE.ConeGeometry(1.7, 3, 4), mat(0x6f6a60)); sp.position.set(-14, 8.5, 14); sp.rotation.y = Math.PI / 4; scene.add(sp);
     for (const [x0, x1, z] of [[-48, -17, -7], [21, 48, 7], [-48, -17, 7]]) box(x1 - x0, .7, .4, 0x8f8a7a, (x0 + x1) / 2, .35, z, scene, false);
   } };
+SIMPLE.barkleystation = { box: [9.7, -11.7], control: { type: 'console', labels: ['WIG-WAGS', 'OFF'], hints: ['Start all three wig-wags', 'Stop the wig-wags'] }, device: wigWags, overview: [24, 44, 22],
+  world: { tracks: [225, 295], trees: 0 },
+  scenery() {   // the town, the side road, and the island platform both trains call at
+    const cols = [0xb5876b, 0xc9b48a, 0x9a6a5a, 0xb9a58f, 0x8f7a6a];
+    const house = (x, z, w, d, h, c) => { box(w, h, d, c, x, h / 2, z); const r = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w, d) * .72, 1.8, 4), mat(0x6f3a2a)); r.position.set(x, h + .9, z); r.rotation.y = Math.PI / 4; r.castShadow = true; scene.add(r); };
+    for (let i = 0; i < 7; i++) house(-46 + i * 5.8 + 2.6, -24, 5.2, 7, 6 + (i % 3) * .8, cols[i % 5]);
+    for (let i = 0; i < 6; i++) house(20 + i * 6.2 + 2.8, -23, 5.6, 7, 6.2 + (i % 2) * .8, cols[(i + 1) % 5]);
+    for (let i = 0; i < 7; i++) house(-46 + i * 5.8 + 2.6, 15.5, 5.2, 6.4, 5.5, cols[(i + 3) % 5]);
+    for (let i = 0; i < 6; i++) house(11 + i * 6.2 + 2.8, 20, 5.6, 4.6, 5, cols[(i + 2) % 5]);
+    for (let i = 0; i < 5; i++) house(14 + i * 8 + 3.2, 7.8, 6.4, 4.4, 4.4, cols[(i + 4) % 5]);
+    box(52, .05, 4, 0x44474c, 29, .03, 12.5, scene, false);                                   // the side road, joining the main road beside the crossing
+    for (let x = 4; x < 55; x += 4) box(2, .02, .12, 0xdcdccc, x, .07, 12.5, scene, false);
+    box(32, 1, 4, 0xb9b4a8, 30, .5, 0); box(32, .02, .3, 0xe8c53a, 30, 1.01, -1.8, scene, false); box(32, .02, .3, 0xe8c53a, 30, 1.01, 1.8, scene, false);   // island platform
+    for (const x of [26, 34]) box(.15, 3.2, .15, 0x444a52, x, 2.6, 0); box(10, .15, 3.2, 0x3d4a5c, 30, 4.25, 0);
+    box(4.4, 2.6, 2, 0xa8734e, 30, 2.3, 0); box(5, .5, 2.6, 0x6f3a2a, 30, 3.8, 0);
+    for (const x of [18, 22, 38, 42]) box(1.6, .4, .5, 0x6a4a35, x, 1.3, 0);
+    for (const z of [-1.6, 1.6]) { const nb = label(['BARKLEY'], 3.2, .7, '#ffffff', '#1f4f9a'); nb.position.set(44, 2.2, z); if (z > 0) nb.rotation.y = Math.PI; scene.add(nb); box(.12, 1.8, .12, 0x444a52, 44, 1.9, z * 1.05); }
+  } };
 SIMPLE.parkside = { box: [9.7, -10.3], control: { type: 'wheel', name: ['BARRIER', 'WHEEL'] }, device: germanBarriers, overview: [36, 24, 36],
   world: { tracks: [210, 260, 310], trees: 0, centre: true },
   scenery() {   // the town: terraces either side, the park to the north-west, station platform and plaza to the south-east
@@ -581,8 +600,9 @@ function frame() {
   }
   for (const [tr, m] of trainMeshes) if (!S.trains.includes(tr)) { scene.remove(m); trainMeshes.delete(tr); }
   for (const c of S.cars) {
-    let m = carMeshes.get(c); if (!m) { m = makeCar(c); carMeshes.set(c, m); }
-    m.position.set(X3(c.x), 0, Z3(c.y)); m.rotation.y = th; m.userData.haz.visible = c.stall > 0 && Math.floor(now * 3) % 2 === 0;
+    let m = carMeshes.get(c); if (m && !c.ped && m.userData.dy !== c.dy) { scene.remove(m); m = null; }
+    if (!m) { m = makeCar(c); carMeshes.set(c, m); }
+    m.position.set(X3(c.x), 0, Z3(c.y)); m.rotation.y = c.side ? -Math.PI / 2 : th; m.userData.haz.visible = c.stall > 0 && Math.floor(now * 3) % 2 === 0;
   }
   for (const [c, m] of carMeshes) if (!S.cars.includes(c)) { scene.remove(m); carMeshes.delete(c); }
   for (const l of B3.levers) { const target = l.id && S.sigOff[l.id] ? .65 : -.15; l.pivot.rotation.x += (target - l.pivot.rotation.x) * Math.min(1, dt * 10); }
