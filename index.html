@@ -204,10 +204,10 @@ const SCENARIOS = {
     ]
   },
   highbarkley: {
-    title: 'High Barkley', trainLen: 140, offerGap: [40, 75], carGap: [8, 16],
+    title: 'High Barkley', trainLen: 140, offerGap: [100, 170], carGap: [8, 16],
     // wig-wag crossing, no gates; the road meets the line at a sharp angle (about 50 degrees off square) while the railway stays straight
     crossing: {
-      type: 'lights', style: 'wigwag', skew: Math.tan(50 * Math.PI / 180), clearance: 90, bell: true, delay: 2, zone: [212, 308], stopN: 340, stopS: 180, runners: 0,
+      type: 'lights', style: 'wigwag', skew: Math.tan(50 * Math.PI / 180), clearance: 90, bell: true, delay: 0, zone: [212, 308], stopN: 340, stopS: 180, runners: 0,
       ui: { title: 'Wig-wag signals', red: 'Start wig-wags', green: 'Stop wig-wags', lampOff: 'Wig-wags off', lampOn: 'Wig-wags SWINGING', wait: 'Wig-wags starting…', ready: 'Wig-wags swinging — safe to signal',
             msgOn: 'Wig-wags starting.', msgOff: 'Wig-wags stopped.', note: 'The wig-wag swings and its bell rings. There are no gates or barriers: signal a train once they swing and the crossing is clear.' }
     },
@@ -249,6 +249,9 @@ function ding(f = 880, when = 0, dur = .35, vol = .25) {
   const t = actx.currentTime + when;
   g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + .01);
   g.gain.exponentialRampToValueAtTime(.0001, t + dur); o.start(t); o.stop(t + dur + .05);
+}
+function bellStrike(vol = .14, base = 880) {      // one clang: a fundamental with bell-like overtones, each fading at its own rate
+  ding(base, 0, 1.2, vol); ding(base * 2.01, 0, .8, vol * .55); ding(base * 3.02, 0, .5, vol * .32); ding(base * 4.17, 0, .3, vol * .2); ding(base * .5, 0, 1.4, vol * .35);
 }
 function bell(n = 3) { for (let i = 0; i < n; i++) ding(1100, i * .28, .3); }
 
@@ -341,7 +344,14 @@ function updateCrossing(dt) {
   if (SC.crossing.type === 'lights') {
     if (S.cmd === 'red') { S.lightT += dt; if (S.lightT >= (SC.crossing.delay ?? 2)) S.lights = true; }
     S.gate = S.lights ? 1 : 0;      // no clear time: signals can be cleared as soon as the lights show red
-    if (SC.crossing.bell && S.lights) { S.beepT -= dt; if (S.beepT <= 0) { ding(1250, 0, .12, .1); S.beepT = .45; } }
+    if (SC.crossing.style === 'wigwag') {
+      // the swing starts small and grows over about four swings (5 s) so the arm never snaps to a position; it eases back down when stopped. One clang at each end of a swing.
+      S.wigAmp = S.lights ? Math.min(1, (S.wigAmp || 0) + dt / 5) : Math.max(0, (S.wigAmp || 0) - dt / 1.5);
+      if (S.lights || S.wigAmp > 0) {
+        const before = Math.floor((S.wigPhase || 0) / Math.PI); S.wigPhase = (S.wigPhase || 0) + dt * 2 * Math.PI * .8;
+        if (S.lights && Math.floor(S.wigPhase / Math.PI) !== before) bellStrike(.1 + .08 * S.wigAmp, before % 2 ? 840 : 900);
+      } else S.wigPhase = 0;
+    } else if (SC.crossing.bell && S.lights) { S.beepT -= dt; if (S.beepT <= 0) { ding(1250, 0, .12, .1); S.beepT = .45; } }
     $('lkG').textContent = !S.cmd ? ui().lampOff : !S.lights ? ui().wait : ui().ready;
     return;
   }
@@ -743,7 +753,7 @@ function armBar(px, py, ang, len) {
 function drawWigWag() {
   // a wig-wag as in the photo: post, grey mechanism box, and an arm that swings about the box, carrying a white disc with a black cross and a red lamp, balanced by a counterweight
   const k = SC.crossing.skew || 0, half = 30 * Math.sqrt(1 + k * k), rx = y => ROAD_X + (y - TRACK_Y) * k;
-  const sw = S.lights ? Math.sin(S.t * 2 * Math.PI * .8) * .75 : 0;
+  const sw = Math.sin(S.wigPhase || 0) * (S.wigAmp || 0) * .75;
   for (const [x, y] of [[rx(185) + half + 26, 185], [rx(335) - half - 26, 335]]) {
     ctx.fillStyle = '#cfd3d6'; ctx.fillRect(x - 3, y - 6, 6, 28); ctx.fillStyle = '#aab0b6'; ctx.fillRect(x - 5, y + 20, 10, 3);                // post and its foot
     ctx.fillStyle = '#9aa0a6'; ctx.fillRect(x - 8, y - 20, 16, 17); ctx.strokeStyle = '#6a7076'; ctx.strokeRect(x - 8, y - 20, 16, 17);   // mechanism box
