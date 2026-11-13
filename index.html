@@ -83,7 +83,7 @@
   <div class="picks">
     <button class="pick" data-box="bailey"><b>Bailey Crossing</b><span>Quiet single line. Wheel-operated gates and two protecting signals. A gentle start.</span></button>
     <button class="pick" data-box="otla"><b>Otla</b><span>Quiet single line with hand-swung gates and no road lights. The signalman has to walk out to swing them.</span></button>
-    <button class="pick" data-box="barkleybridge"><b>Barkley Bridge</b><span>A lifting bridge carries the railway and a road over a river, with a silent wig-wag foot crossing for the signaller by the box stairs. Trains arrive by themselves; lift it for boats. No scoring.</span></button>
+    <button class="pick" data-box="barkleybridge"><b>Barkley Bridge</b><span>A lifting bridge carries the railway and a road over a river, with a silent wig-wag foot crossing for the signaller by the box stairs. Trains and signals work themselves: signals go red when you lower the barriers. Lift it for boats. No scoring.</span></button>
     <button class="pick" data-box="warthamhighway"><b>Wartham Highway</b><span>A single track across a busy four-lane road, with wig-wags facing each approach. Fast traffic, two lanes each way.</span></button>
     <button class="pick" data-box="barkleystation"><b>Barkley Station</b><span>A town crossing with wig-wags and a side road joining beside it. Two tracks, both calling at an island platform.</span></button>
     <button class="pick" data-box="highbarkley"><b>High Barkley</b><span>Two-track line in hill country. A wig-wag crossing, no gates, and the road meets the line at a sharp angle.</span></button>
@@ -250,7 +250,7 @@ const SCENARIOS = {
     ]
   },
   barkleybridge: {
-    title: 'Barkley Bridge', trainLen: 140, offerGap: [45, 80], carGap: [6, 12], noScore: true, autoTrains: true,
+    title: 'Barkley Bridge', trainLen: 140, offerGap: [45, 80], carGap: [6, 12], noScore: true, autoTrains: true, autoSignals: true,
     // a river runs north-south under a double-leaf lifting bridge that carries a single railway and a road side by side; boats ask for it to be lifted
     crossing: { type: 'bridge', noRoad: true, clearance: { 1: 285, '-1': 70 }, zone: [0, 0], footX: 760, wigs: [[782, 200, Math.PI]], bellVol: 0 },
     signals: [
@@ -310,6 +310,7 @@ function say(text, secs = 6) {
 function toggleLever(id) {
   if (!S.running) return;
   const sig = sigById(id); if (!sig) return;
+  if (SC.autoSignals) { say('The signals here work themselves: green until the barriers are down.', 4); return; }
   const el = $('lv_' + id), lk = $('lk_' + id);
   if (S.sigOff[id]) { S.sigOff[id] = false; lk.textContent = ''; say('Signal returned to danger.'); return; }
   let why = '';
@@ -392,8 +393,6 @@ function bridgeCmd(cmd) {
     S.cmd = 'lower'; if (!S.lights) { S.lights = true; S.lightT = 0; } else S.lightT = Math.max(S.lightT, 3); say('Road lights on, barriers lowering.', 3);
   } else if (cmd === 'open') {
     if (S.lift > .001 || S.liftCmd) say('Locked: the bridge is lifted.');
-    else if (anySigOff()) say('Locked: a signal is off (the signals are paired with the barriers).');
-    else if (approachLocked()) say('Locked: a train is on the crossing.');
     else if (S.lights) { S.cmd = 'raise'; say('Barriers rising.', 3); }
   } else if (cmd === 'lift') {
     const why = S.lift >= 1 ? 'The bridge is already up.' : S.gate < .999 ? 'Locked: close the road barriers first.' : anySigOff() ? 'Locked: a signal is off.' : approachLocked() ? 'Locked: a train is on or about to enter the bridge.' : carsInZone().length ? 'Locked: a vehicle is on the bridge.' : S.playerOnSpan ? 'Locked: someone is standing on the bridge.' : '';
@@ -404,13 +403,20 @@ function bridgeCmd(cmd) {
   }
 }
 function stepWigWag(dt) {       // the swing starts small, grows over about four swings, eases down when stopped; one clang at each end of a swing
-  S.wigAmp = S.lights ? Math.min(1, (S.wigAmp || 0) + dt / 5) : Math.max(0, (S.wigAmp || 0) - dt / 1.5);
-  if (S.lights || S.wigAmp > 0) {
+  const on = isBridge() ? !!S.footWarn : S.lights;
+  S.wigAmp = on ? Math.min(1, (S.wigAmp || 0) + dt / 5) : Math.max(0, (S.wigAmp || 0) - dt / 1.5);
+  if (on || S.wigAmp > 0) {
     const before = Math.floor((S.wigPhase || 0) / Math.PI); S.wigPhase = (S.wigPhase || 0) + dt * 2 * Math.PI * .8;
-    if (S.lights && (SC.crossing.bellVol ?? 1) > 0 && Math.floor(S.wigPhase / Math.PI) !== before) bellStrike((.1 + .08 * S.wigAmp) * (SC.crossing.bellVol ?? 1), before % 2 ? 840 : 900);      // bellVol 0: this wig-wag has no bell
+    if (on && (SC.crossing.bellVol ?? 1) > 0 && Math.floor(S.wigPhase / Math.PI) !== before) bellStrike((.1 + .08 * S.wigAmp) * (SC.crossing.bellVol ?? 1), before % 2 ? 840 : 900);      // bellVol 0: this wig-wag has no bell
   } else S.wigPhase = 0;
 }
+function footWarning() {            // a train close to the signaller's foot crossing, or still on it
+  const fx = SC.crossing.footX;
+  return S.trains.some(tr => (fx - tr.x) * tr.dir < 450 && (fx - trainRear(tr)) * tr.dir > -20);
+}
 function updateBridge(dt) {
+  S.footWarn = footWarning();
+  if (SC.autoSignals) { const green = S.gate <= 0 && !S.lights && !S.cmd && S.lift <= .001; for (const sg of SC.signals) S.sigOff[sg.id] = green; }
   stepWigWag(dt);
   if (S.cmd === 'lower') { S.lights = true; S.lightT += dt; if (S.lightT >= 3) { S.gate = Math.min(1, S.gate + dt / 6); if (S.gate >= 1) S.cmd = null; } }
   else if (S.cmd === 'raise') { S.gate = Math.max(0, S.gate - dt / 5); if (S.gate <= 0) { S.cmd = null; S.lights = false; S.lightT = 0; } }
@@ -646,7 +652,7 @@ function buildPanel() {
     <div class="row"><button id="bBarClose">Close road barriers</button><button id="bBarOpen">Open road barriers</button></div>
     <div class="row"><button id="bBrUp">Lift bridge</button><button id="bBrDown">Lower bridge</button></div>
     <div class="gbar"><i id="gfill"></i></div><div class="lock" id="lkG"></div>
-    <div class="lock">Trains arrive by themselves. The signals are paired with the road barriers: signals only clear with the barriers down and the bridge down. A single silent wig-wag (no bell) guards the signaller's foot crossing by the foot of the box stairs and swings whenever the barriers are lowered. To lift: signals at danger, no train on the bridge, barriers down, bridge clear; boats wait until it is fully up. Keys: &rarr; / &larr; barriers, Shift + &rarr; / &larr; lift / lower. No scoring here.</div></div>`;
+    <div class="lock">Trains arrive by themselves and the signals work themselves: green until the barriers are down, red from the moment they start to lower, green again once the bridge is down and the barriers are up. A single silent wig-wag guards the signaller's foot crossing by the foot of the box stairs and swings whenever a train is approaching it. To lift: close the barriers (the signals go red), wait until no train is on the bridge and it is clear; boats wait until it is fully up. Keys: &rarr; / &larr; barriers, Shift + &rarr; / &larr; lift / lower. No scoring here.</div></div>`;
   else if (X.type === 'lights') h += `<div class="box ctl"><h3>${ui().title}</h3>
     <div class="lamps"><span class="lamp on" id="lampRoad">${ui().lampOff}</span></div>
     <div class="row"><button id="bRed">${ui().red}</button><button id="bGreen">${ui().green}</button></div>

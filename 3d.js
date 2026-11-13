@@ -248,7 +248,7 @@ const wigWags = () => {
     lamp.position.z = .07; lamp2.position.z = -.07;
     items.push({ pivot, lamp });
   }
-  return () => { const on = S.lights, sw = Math.sin(S.wigPhase || 0) * (S.wigAmp || 0) * .75; for (const o of items) { o.pivot.rotation.z = sw; o.lamp.material.color.set(on ? 0xff2a2a : 0x5a1818); } };
+  return () => { const on = SC.crossing.type === 'bridge' ? !!S.footWarn : S.lights, sw = Math.sin(S.wigPhase || 0) * (S.wigAmp || 0) * .75; for (const o of items) { o.pivot.rotation.z = sw; o.lamp.material.color.set(on ? 0xff2a2a : 0x5a1818); } };
 };
 const mwlLights = () => {
   const heads = [];
